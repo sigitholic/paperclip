@@ -1,0 +1,23 @@
+{
+  "name": "@starnet/pack-kit",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Tiny shared helpers for Starnet tool packs built as Paperclip plugins.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --config ./vitest.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=24.11.0"
+  }
+}
