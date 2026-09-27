@@ -122,4 +122,12 @@ export class FakeCore implements CoreReader {
   async naiveChars() {
     return this.naive;
   }
+  async labels(companyId: string, agentIds: string[], issueIds: string[]) {
+    const issues: Record<string, string> = {};
+    for (const id of issueIds) {
+      const i = this.issues.get(id);
+      if (i && i.companyId === companyId) issues[id] = `${i.identifier ?? id.slice(0, 8)} — ${i.title}`;
+    }
+    return { agents: Object.fromEntries(agentIds.map((id) => [id, `Agent ${id.slice(0, 4)}`])), issues };
+  }
 }

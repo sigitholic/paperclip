@@ -309,7 +309,8 @@ export function createMemoryService(deps: ServiceDeps) {
         store.listBundles(companyId, { issueId: issue.id, limit: 5 }),
         store.listAdmissions(companyId, { scopes: scopes.filter((s) => s.kind !== "company"), limit: 10 }),
       ]);
-      return { issue: { id: issue.id, identifier: issue.identifier, title: issue.title, assigneeAgentId: agentId }, l1s, agentL1, pins, notes, quarantine, bundles, admissions };
+      const labels = await core.labels(companyId, l1s.map((l) => l.agentId), []);
+      return { issue: { id: issue.id, identifier: issue.identifier, title: issue.title, assigneeAgentId: agentId }, l1s, agentL1, pins, notes, quarantine, bundles, admissions, labels };
     },
 
     async agentView(companyId: string, agentId: string) {
@@ -324,7 +325,9 @@ export function createMemoryService(deps: ServiceDeps) {
         store.listBundles(companyId, { agentId: id, limit: 5 }),
         store.listAdmissions(companyId, { scopes: scope, limit: 10 }),
       ]);
-      return { agentL1, l1s: l1s.filter((l) => l.issueId !== AGENT_L1_ISSUE).slice(0, 10), pins, lessons, quarantine, bundles, admissions };
+      const issueL1s = l1s.filter((l) => l.issueId !== AGENT_L1_ISSUE).slice(0, 10);
+      const labels = await core.labels(companyId, [id], [...issueL1s.map((l) => l.issueId), ...bundles.map((b) => b.issueId)]);
+      return { agentL1, l1s: issueL1s, pins, lessons, quarantine, bundles, admissions, labels };
     },
 
     async pageView(companyId: string, filter: { q?: string; tier?: string; scopeKind?: string }) {
@@ -338,7 +341,10 @@ export function createMemoryService(deps: ServiceDeps) {
         store.listL1(companyId, { limit: 20 }),
       ]);
       const scoped = SCOPE_KINDS.includes(filter.scopeKind as MemoryScopeKind) ? items.filter((i) => i.scopeKind === filter.scopeKind) : items;
-      return { items: scoped, counts, savings: stats, admissions, l1s };
+      const agentL1s = await store.listL1(companyId, { issueId: AGENT_L1_ISSUE, limit: 50 });
+      const labels = await core.labels(companyId, [...agentL1s.map((l) => l.agentId), ...l1s.map((l) => l.agentId)], l1s.map((l) => l.issueId));
+      const agents = agentL1s.map((l) => ({ id: l.agentId, name: labels.agents[l.agentId] ?? l.agentId.slice(0, 8), updatedAt: l.updatedAt, runCount: l.runCount }));
+      return { items: scoped, counts, savings: stats, admissions, l1s, agents, labels };
     },
 
     async savings(companyId: string) {

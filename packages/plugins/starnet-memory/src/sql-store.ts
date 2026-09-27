@@ -1,21 +1,6 @@
 import type { PluginDatabaseClient } from "@paperclipai/plugin-sdk";
 import type { MemoryTier } from "@starnet/memory-core";
-import type {
-  AdmissionLogRow,
-  BundleLogRow,
-  BundleStats,
-  CommentInfo,
-  CoreReader,
-  HandoffComment,
-  IssueInfo,
-  ItemFilter,
-  L1Row,
-  MemoryStore,
-  NewItem,
-  RunInfo,
-  Scope,
-  StoredItem,
-} from "./types.js";
+import type { AdmissionLogRow, BundleLogRow, BundleStats, CommentInfo, CoreReader, HandoffComment, IssueInfo, ItemFilter, L1Row, Labels, MemoryStore, NewItem, RunInfo, Scope, StoredItem } from "./types.js";
 
 type Row = Record<string, unknown>;
 type Db = Pick<PluginDatabaseClient, "namespace" | "query" | "execute">;
@@ -317,6 +302,29 @@ export class SqlCoreReader implements CoreReader {
     return r
       ? { id: str(r.id), issueId: str(r.issueId), authorType: strOrNull(r.authorType), authorUserId: strOrNull(r.authorUserId), authorAgentId: strOrNull(r.authorAgentId), body: str(r.body) }
       : null;
+  }
+
+  async labels(companyId: string, agentIds: string[], issueIds: string[]): Promise<Labels> {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const pick = (ids: string[]) => [...new Set(ids.filter((id) => uuid.test(id)))].slice(0, 50);
+    const out: Labels = { agents: {}, issues: {} };
+    const agents = pick(agentIds);
+    if (agents.length) {
+      const rows = await this.db.query<Row>(
+        `SELECT id::text AS id, name FROM public.agents WHERE company_id = $1::uuid AND id IN (${agents.map((_, i) => `$${i + 2}::uuid`).join(", ")})`,
+        [companyId, ...agents],
+      );
+      for (const r of rows) out.agents[str(r.id)] = str(r.name);
+    }
+    const issues = pick(issueIds);
+    if (issues.length) {
+      const rows = await this.db.query<Row>(
+        `SELECT id::text AS id, identifier, title FROM public.issues WHERE company_id = $1::uuid AND id IN (${issues.map((_, i) => `$${i + 2}::uuid`).join(", ")})`,
+        [companyId, ...issues],
+      );
+      for (const r of rows) out.issues[str(r.id)] = `${strOrNull(r.identifier) ?? str(r.id).slice(0, 8)} — ${str(r.title).slice(0, 60)}`;
+    }
+    return out;
   }
 
   async getIssue(companyId: string, issueId: string): Promise<IssueInfo | null> {
