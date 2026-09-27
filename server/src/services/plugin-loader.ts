@@ -44,7 +44,7 @@ import { pluginManifestValidator } from "./plugin-manifest-validator.js";
 import { pluginCapabilityValidator } from "./plugin-capability-validator.js";
 import { pluginRegistryService } from "./plugin-registry.js";
 import type { PluginWorkerManager, WorkerStartOptions, WorkerToHostHandlers } from "./plugin-worker-manager.js";
-import { forwardStreamNotificationsToBus, type PluginStreamBus } from "./plugin-stream-bus.js";
+import { forwardStreamNotificationsToBus, type PluginStreamBus } from "./plugin-stream-bus.js"; // STARNET-PATCH P-0
 import type { PluginEventBus } from "./plugin-event-bus.js";
 import type { PluginJobScheduler } from "./plugin-job-scheduler.js";
 import type { PluginJobStore } from "./plugin-job-store.js";
@@ -372,7 +372,7 @@ export interface PluginRuntimeServices {
   /** Lifecycle manager for state transitions and worker lifecycle events. */
   lifecycleManager: PluginLifecycleManager;
   /** Optional SSE stream bus; worker `ctx.streams.*` notifications are published to it. */
-  streamBus?: PluginStreamBus;
+  streamBus?: PluginStreamBus; // STARNET-PATCH P-0
   /**
    * Factory that creates worker-to-host RPC handlers for a given plugin.
    *
@@ -2349,7 +2349,7 @@ export function pluginLoader(
         // set is exactly the plugin's configured companies — proactive access
         // never reaches an unconfigured company.
         proactiveCompanyScopes: configRows.map((row) => row.companyId),
-        onStreamNotification: streamBus ? forwardStreamNotificationsToBus(streamBus, pluginId) : undefined,
+        onStreamNotification: streamBus ? forwardStreamNotificationsToBus(streamBus, pluginId) : undefined, // STARNET-PATCH P-0
       };
 
       // Repo-local plugin installs can resolve workspace TS sources at runtime
