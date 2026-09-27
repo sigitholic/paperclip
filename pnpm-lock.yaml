@@ -941,6 +941,8 @@ importers:
         specifier: ^24.0.0
         version: 24.13.3
 
+  packages/starnet-devkit: {}
+
   packages/tailscale-https-broker:
     devDependencies:
       '@types/node':

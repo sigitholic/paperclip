@@ -1,0 +1,74 @@
+# Starnet fork CI: typecheck + test + build every Starnet package, the repo boundary
+# checks, and the regression test for core patch P-0 (plugin stream bridge).
+# Upstream workflows are disabled in this fork via repo Actions settings (see
+# STARNET_PATCHES.md "Fork CI"), so this is the only workflow that runs here.
+name: starnet-ci
+
+on:
+  pull_request:
+    branches: ["starnet/**"]
+  push:
+    # Feature branches are covered by their PR run; pushes to starnet/main verify the merge.
+    branches: ["starnet/main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: starnet-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  starnet:
+    # Never run if this file ever lands in another repo (e.g. upstream).
+    if: github.repository == 'sigitholic/paperclip'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The box/dev DATABASE_URL trap does not exist on runners; keep it explicit.
+      DATABASE_URL: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: |
+          if ! pnpm install --frozen-lockfile; then
+            echo "::error title=Lockfile out of sync::pnpm-lock.yaml does not match package.json files. Run 'pnpm install --no-frozen-lockfile' locally and commit pnpm-lock.yaml."
+            exit 1
+          fi
+
+      - name: Build plugin SDK (and its workspace deps)
+        run: pnpm --filter "@paperclipai/plugin-sdk..." build
+
+      - name: Typecheck Starnet packages
+        run: pnpm --filter "./packages/plugins/starnet-*" --filter "./packages/starnet-*" --filter "./packages/adapters/starnet-*" --workspace-concurrency=1 run typecheck
+
+      - name: Test Starnet packages
+        run: pnpm --filter "./packages/plugins/starnet-*" --filter "./packages/starnet-*" --filter "./packages/adapters/starnet-*" run test
+
+      - name: Build Starnet packages
+        run: pnpm --filter "./packages/plugins/starnet-*" --filter "./packages/starnet-*" --filter "./packages/adapters/starnet-*" --workspace-concurrency=1 run build
+
+      - name: Repo boundary checks
+        run: |
+          node scripts/check-forbidden-tokens.mjs
+          node scripts/check-module-boundaries.mjs
+          node scripts/check-token-gates.mjs
+
+      - name: Core patch regression tests (P-0 plugin stream bridge)
+        working-directory: server
+        run: npx vitest run src/__tests__/plugin-stream-bridge.test.ts src/__tests__/plugin-routes-authz.test.ts
+
+      - name: STARNET-PATCH markers match STARNET_PATCHES.md
+        run: node packages/starnet-devkit/scripts/patch-markers.mjs
