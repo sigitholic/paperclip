@@ -1,0 +1,22 @@
+{
+  "name": "@starnet/memory-core",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Starnet Memory core: write admission (anti-poison, secret scrub, no transcripts), deterministic L1 session summary and a budgeted context-bundle builder. Pure, no I/O.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test --experimental-test-coverage --test-coverage-include=src/**/*.ts --test-coverage-lines=90 --test-coverage-functions=90 --test-coverage-branches=85 tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=24.11.0"
+  }
+}
