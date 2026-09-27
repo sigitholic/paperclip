@@ -33,8 +33,36 @@ await call("POST", `/issues/${issue.id}/checkout`, { agentId, expectedStatuses: 
 const session = await call("POST", "/tool-gateway/sessions", { issueId: issue.id });
 const gw = { "x-paperclip-tool-gateway-token": session.token };
 const tools = await call("GET", "/tool-gateway/tools", null, gw);
-const names = (Array.isArray(tools) ? tools : tools?.tools ?? []).map((t) => t.name).filter((n) => n.startsWith(PACK));
+const allNames = (Array.isArray(tools) ? tools : tools?.tools ?? []).map((t) => t.name);
+const names = allNames.filter((n) => n.startsWith(PACK));
 console.log(`[noc] pack tools visible via gateway: ${names.join(", ")}`);
+
+// Starnet Memory: pull the curated context pack once per run. A plugin cannot inject text into this
+// adapter's prompt, so the agent asks for it (agent-auth plugin route, run JWT). Only sizes are logged.
+// Optional: if the memory plugin is missing or not ready, the run continues without it.
+async function fetchMemory() {
+  try {
+    const q = encodeURIComponent(allNames.map((n) => n.slice(n.indexOf(":") + 1)).join(","));
+    const res = await fetch(`${api}/plugins/starnet.memory/api/context/${issue.id}?tools=${q}`, {
+      headers: { authorization: `Bearer ${runJwt}`, "x-paperclip-run-id": runId },
+    });
+    console.log(`GET /plugins/starnet.memory/api/context -> ${res.status}`);
+    if (!res.ok) return null;
+    const pack = await res.json();
+    return typeof pack?.text === "string" && pack.meta ? pack : null;
+  } catch {
+    console.log("[noc] memory plugin unreachable, continuing without memory");
+    return null;
+  }
+}
+const memory = await fetchMemory();
+const memoryPins = memory
+  ? (memory.text.split("## Pins\n")[1] ?? "").split("\n## ")[0].split("\n").filter((l) => l.startsWith("- ")).map((l) => l.replace(/^- (📌 )?/, ""))
+  : [];
+if (memory) {
+  const s = memory.savings;
+  console.log(`[noc] memory pack: ${memory.meta.chars} chars (~${memory.meta.estTokens} tok), sections ${memory.meta.sections.map((x) => x.name).join("+")}; naive history ${s.naiveChars} chars (~${s.naiveTokens} tok); saved ${s.savedPct}%`);
+}
 
 async function tool(name, parameters = {}) {
   const out = await call("POST", "/tool-gateway/tools/call", { tool: PACK + name, parameters }, gw);
@@ -66,6 +94,8 @@ const alerts = [
 ].filter(Boolean);
 const mockSources = [...new Set([[pppoe, "mikrotik"], [res, "mikrotik"], [cpe, "genieacs"]].filter(([x]) => x.content.startsWith("[MOCK")).map(([, s]) => s))];
 const summary = [
+  `Hasil: PPPoE aktif ${pppoe.data.total}, CPE online ${cpe.data.online}/${cpe.data.total}, CPU ${r.cpuLoadPct}%, alert: ${alerts.length ? alerts.join("; ") : "tidak ada"}`,
+  "",
   `**${issue.title}**${mockSources.length ? ` — ⚠️ MOCK data for: ${mockSources.join(", ")} (no device configured)` : " — live data"}`,
   "",
   `- Active PPPoE sessions: **${pppoe.data.total}**`,
@@ -73,6 +103,10 @@ const summary = [
   `- CPE online: **${cpe.data.online}/${cpe.data.total}**${offline.length ? ` (offline: ${offline.slice(0, 5).map((d) => d.serial).join(", ")}${offline.length > 5 ? ", …" : ""})` : ""}`,
   ...(firstOffline ? [`- First offline CPE: ${firstOffline.content}`] : []),
   `- Alerts: ${alerts.length ? alerts.join("; ") : "none"}`,
+  ...(memoryPins.length ? ["", "Catatan board yang dipakai (Starnet Memory):", ...memoryPins.slice(0, 5).map((p) => `- ${p}`)] : []),
+  ...(memory
+    ? ["", `_Memori: context pack ${memory.meta.chars} karakter (~${memory.meta.estTokens} token) vs riwayat penuh ${memory.savings.naiveChars} karakter — hemat ${memory.savings.savedPct}%._`]
+    : []),
   "",
   `_Tools called via Paperclip tool gateway (run ${runId}); read-only, no device changes._`,
 ].join("\n");
