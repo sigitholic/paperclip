@@ -6,12 +6,18 @@
   "description": "Starnet developer kit: patch bookkeeping checks, upstream sync, demo seed, fake device servers and E2E against a local Paperclip instance.",
   "scripts": {
     "check:patches": "node ./scripts/patch-markers.mjs",
-    "typecheck": "node --check ./scripts/patch-markers.mjs",
-    "test": "node ./scripts/patch-markers.mjs",
+    "seed": "node ./scripts/demo-seed.mjs",
+    "fake-servers": "node ./scripts/fake-servers.mjs",
+    "e2e": "vitest run --config ./vitest.config.mjs e2e",
+    "test": "node ./scripts/patch-markers.mjs && vitest run --config ./vitest.config.mjs tests",
+    "typecheck": "node --check ./scripts/patch-markers.mjs && node --check ./scripts/demo-seed.mjs && node --check ./scripts/fake-servers.mjs",
     "build": "node -e \"\""
   },
   "license": "MIT",
   "engines": {
     "node": ">=24.11.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.11"
   }
 }
