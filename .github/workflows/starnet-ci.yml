@@ -8,7 +8,8 @@ on:
   pull_request:
     branches: ["starnet/**"]
   push:
-    branches: ["starnet/**"]
+    # Feature branches are covered by their PR run; pushes to starnet/main verify the merge.
+    branches: ["starnet/main"]
   workflow_dispatch:
 
 permissions:
