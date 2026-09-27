@@ -20,6 +20,7 @@ export const STARNET_OWNED = [
   /^packages\/starnet-/,
   /^\.github\/workflows\/starnet-[^/]+\.ya?ml$/,
   /^STARNET_PATCHES\.md$/,
+  /^\.github\/README\.md$/, // Starnet README (GitHub shows .github/README.md before the root README)
 ];
 const GENERATED = [/^pnpm-lock\.yaml$/];
 /** P-0 (plugin stream bridge) — the only approved core patch. */
