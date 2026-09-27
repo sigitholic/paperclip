@@ -1,0 +1,63 @@
+# Weekly upstream sync for the Starnet fork: merges paperclipai/paperclip master into
+# starnet/main on a dated branch and opens a fork PR (draft on conflicts / failed checks).
+# Runs packages/starnet-devkit/scripts/upstream-sync.sh; never touches the upstream repo.
+#
+# Setup notes (see packages/starnet-devkit/README.md "Upstream sync"):
+# - `schedule` only fires from the repository DEFAULT branch. While the fork's default branch
+#   is `master`, use "Run workflow" (workflow_dispatch) or run the script locally.
+# - GITHUB_TOKEN cannot push commits that touch .github/workflows/** (upstream merges often do)
+#   and PRs it opens do not trigger pull_request workflows. Provide a fine-grained PAT as the
+#   repo secret STARNET_SYNC_TOKEN (contents, pull requests, workflows: read/write on this fork).
+name: starnet-upstream-sync
+
+on:
+  schedule:
+    - cron: "0 19 * * 0" # Monday 02:00 WIB
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: starnet-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'sigitholic/paperclip'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ secrets.STARNET_SYNC_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: starnet/main
+          fetch-depth: 0
+          token: ${{ secrets.STARNET_SYNC_TOKEN || github.token }}
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (current starnet/main)
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync
+        run: |
+          git config user.name "starnet-sync[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set +e
+          packages/starnet-devkit/scripts/upstream-sync.sh --pr --server-tests
+          code=$?
+          [ -f packages/starnet-devkit/.state/sync-report.md ] && cat packages/starnet-devkit/.state/sync-report.md >> "$GITHUB_STEP_SUMMARY"
+          # 2 = conflicts (draft PR opened), 3 = checks failed (draft PR opened): surface as failure.
+          exit $code

@@ -29,3 +29,25 @@ Developer tooling for the Starnet fork. It talks **REST only** to a **local** Pa
 2. **Routine latency (plan 0.4).** Three manual routine runs; each is timed from `run-daily-check` to `agent.run.started`. The test asserts p95 ≤ 15 s.
 
 Example (`mock`, 27 Sep 2026): run started +108 ms, desk busy +341 ms, reply +0.9 s, desk idle +1.2 s, routine p95 91 ms.
+
+## Upstream sync (weekly)
+
+`packages/starnet-devkit/scripts/upstream-sync.sh [--push] [--pr] [--no-checks] [--server-tests]`
+
+1. `git fetch upstream master`. If `starnet/main` already contains upstream, the script stops with "up to date".
+2. Branch `starnet/sync-YYYYMMDD` from `origin/starnet/main`, then `git merge --no-ff upstream/master` (a merge, not a rebase, so fork history stays intact).
+3. On conflicts, `pnpm-lock.yaml` is taken from upstream and regenerated. Any other conflict stops the script: it lists the files and exits with code 2. With `--pr`, it commits the markers and opens a **draft** fork PR listing the conflicting files.
+4. `pnpm install --no-frozen-lockfile`; the regenerated lockfile is committed.
+5. Checks run: the STARNET-PATCH markers match `STARNET_PATCHES.md`, and every core file that differs from upstream is listed there. Then the Starnet typecheck, test and build, the repo boundary checks, and (with `--server-tests`) the P-0 server tests. A failed check exits with code 3; with `--pr` the PR is opened as a draft.
+6. A report goes to `.state/sync-report.md`: upstream commits, conflicts, checks, core files, **new upstream workflows to disable**, and new DB migrations. With `--pr` the report becomes the PR body. The PR always targets `sigitholic/paperclip:starnet/main`; nothing is opened upstream.
+
+After merging a sync PR:
+
+1. Restart the local instance with `/workspace/paperclip-stop.sh` and then `/workspace/paperclip-start.sh`, so that migrations run.
+2. Wait for `/api/health`.
+3. Run `pnpm --filter @starnet/devkit e2e`.
+
+The workflow `.github/workflows/starnet-upstream-sync.yml` runs the same script: weekly on Mondays at 02:00 WIB, or on demand with "Run workflow". Two GitHub limitations apply:
+
+- **Schedule needs the default branch.** A `schedule` only fires from the repository's **default branch**. The fork's default branch is `master`, so either switch it to `starnet/main` or trigger the workflow manually.
+- **GITHUB_TOKEN is too weak.** It cannot push merges that touch `.github/workflows/**`, and PRs it opens don't trigger `pull_request` CI (the script dispatches `starnet-ci` itself to compensate). Opening the PR also needs "Allow GitHub Actions to create and approve pull requests" to be on. Adding a fine-grained PAT as the repo secret `STARNET_SYNC_TOKEN` (fork only; contents, pull requests and workflows read/write) avoids all of this.
