@@ -79,3 +79,22 @@ export function createPluginStreamBus(): PluginStreamBus {
     },
   };
 }
+
+/**
+ * Build the worker manager's `onStreamNotification` callback that publishes a
+ * worker's `ctx.streams.open/emit/close` notifications onto the bus for
+ * `pluginId` (the plugin's registry id, as used by the SSE bridge route).
+ */
+export function forwardStreamNotificationsToBus(
+  bus: PluginStreamBus,
+  pluginId: string,
+): (method: string, params: Record<string, unknown>) => void {
+  return (method, params) => {
+    const channel = typeof params.channel === "string" ? params.channel : "";
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    if (!channel || !companyId) return;
+    if (method === "streams.emit") bus.publish(pluginId, channel, companyId, params.event, "message");
+    else if (method === "streams.open") bus.publish(pluginId, channel, companyId, { channel }, "open");
+    else if (method === "streams.close") bus.publish(pluginId, channel, companyId, { channel }, "close");
+  };
+}

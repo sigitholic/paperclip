@@ -5,6 +5,13 @@ import { applyEvent, deriveDesk, type PresenceMap } from "./presence.js";
 export const STREAM = "office";
 const EVENTS = ["agent.run.started", "agent.run.finished", "agent.run.failed", "agent.run.cancelled", "issue.checked_out", "issue.comment.created"] as const;
 const LOG_SIZE = 30;
+const TERMINAL = new Set(["agent.run.finished", "agent.run.failed", "agent.run.cancelled"]);
+/**
+ * Core publishes agent.run.* *before* it flips the agent status back to idle (a few hundred
+ * ms later) and emits no plugin event for that flip. Re-announce shortly after a terminal run
+ * event so live clients re-read the settled status without polling.
+ */
+export const SETTLE_MS = [1500, 5000] as const;
 
 interface OfficeState { presence: PresenceMap; log: Array<{ at: string; eventType: string; agentId: string; issueId: string | null }> }
 const key = (companyId: string) => ({ scopeKind: "company" as const, scopeId: companyId, stateKey: "office" });
@@ -13,6 +20,11 @@ const plugin = definePlugin({
   async setup(ctx: PluginContext) {
     const serial = serialByKey();
     const load = async (companyId: string) => ((await ctx.state.get(key(companyId))) as OfficeState | null) ?? { presence: {}, log: [] };
+
+    const announce = (companyId: string, event: Record<string, unknown>) => {
+      ctx.streams.open(STREAM, companyId);
+      ctx.streams.emit(STREAM, event);
+    };
 
     const onEvent = (e: PluginEvent) => serial(e.companyId, async () => {
       const agentId = (e.payload as { agentId?: unknown } | null)?.agentId;
@@ -23,8 +35,12 @@ const plugin = definePlugin({
       const issueId = (e.payload as { issueId?: string }).issueId ?? (e.entityType === "issue" ? e.entityId ?? null : null);
       const log = [...st.log, { at: e.occurredAt, eventType: e.eventType, agentId, issueId }].slice(-LOG_SIZE);
       await ctx.state.set(key(e.companyId), { presence, log });
-      ctx.streams.open(STREAM, e.companyId);
-      ctx.streams.emit(STREAM, { type: "office.changed", agentId, eventType: e.eventType, at: e.occurredAt });
+      announce(e.companyId, { type: "office.changed", agentId, eventType: e.eventType, at: e.occurredAt });
+      if (TERMINAL.has(e.eventType)) {
+        for (const ms of SETTLE_MS) {
+          setTimeout(() => announce(e.companyId, { type: "office.changed", agentId, eventType: "settle", at: new Date().toISOString() }), ms).unref?.();
+        }
+      }
     });
     for (const type of EVENTS) ctx.events.on(type, onEvent);
 

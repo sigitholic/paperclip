@@ -61,7 +61,10 @@ describe("worker (harness)", () => {
     expect(thread.messages.map((m) => m.role)).toEqual(["operator", "office"]);
     expect(thread.messages[1]!.text).toMatch(/untuk NOC Engineer/);
 
-    h.seed({ issueComments: [{ id: "c1", issueId: issue.id, companyId: C, body: "Ada 137 sesi PPPoE aktif.", authorAgentId: "noc", authorUserId: null, createdAt: new Date(), updatedAt: new Date() } as never] });
+    // The reply is written after the run starts; keep its timestamp later than the run note
+    // so the chronological thread order is deterministic (no same/next-millisecond flake).
+    const replyAt = new Date(Date.now() + 1000);
+    h.seed({ issueComments: [{ id: "c1", issueId: issue.id, companyId: C, body: "Ada 137 sesi PPPoE aktif.", authorAgentId: "noc", authorUserId: null, createdAt: replyAt, updatedAt: replyAt } as never] });
     await h.emit("agent.run.started", { issueId: issue.id, agentId: "noc" }, { companyId: C, entityId: "run-1", entityType: "heartbeat_run" });
     await h.emit("issue.comment.created", { agentId: "noc" }, { companyId: C, entityId: issue.id, entityType: "issue" });
     thread = await h.getData("thread", { companyId: C });
