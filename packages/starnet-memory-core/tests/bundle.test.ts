@@ -119,6 +119,20 @@ describe("buildBundle", () => {
     assert.equal(task.truncated, true);
   });
 
+  test("agent L1 section: rendered after L1, skipped when it is the same run, dropped last", () => {
+    const agentL1 = { summary: "Run 0000 selesai\nHasil: PPPoE aktif 800", pinIds: [], lastRunId: "r0", runCount: 3, updatedAt: null, flags: [] };
+    const b = buildBundle({ ...BASE, agentL1 });
+    assert.deepEqual(b.meta.sections.map((s) => s.name), ["task", "handoff", "tools", "l1", "agent", "pins", "hits"]);
+    assert.ok(b.text.includes("## Memori agen (run sebelumnya)\nRun 0000 selesai"));
+    const same = buildBundle({ ...BASE, agentL1: { ...agentL1, lastRunId: "r1" } });
+    assert.ok(!same.text.includes("Memori agen"));
+    const onlyAgent = buildBundle({ task: { title: "T" }, agentL1 });
+    assert.ok(onlyAgent.text.includes("Hasil: PPPoE aktif 800"));
+    const tight = buildBundle({ ...BASE, agentL1 }, { ...BUNDLE_BUDGETS, total: 300 });
+    assert.deepEqual(tight.meta.droppedSections, ["hits", "handoff", "tools", "agent"]);
+    assert.ok(tight.text.length <= 300);
+  });
+
   test("total budget: drops hits, then handoff, then tools; never pins or L1", () => {
     const tight = { ...BUNDLE_BUDGETS, total: 300 };
     const b = buildBundle(BASE, tight);

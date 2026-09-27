@@ -23,6 +23,8 @@ const SIGNAL_RULES: Array<{ key: keyof Signals; re: RegExp }> = [
   { key: "blockers", re: /^(?:blocker|blocked|kendala|hambatan)\s*[:：-]\s*(.+)$/i },
 ];
 
+const RESULT_LINE = /^(?:hasil|result|ringkasan|summary)\s*[:：-]\s*(.+)$/i;
+
 const SIGNAL_ITEM_CHARS = 140;
 const HEADLINE_CHARS = 200;
 
@@ -34,7 +36,18 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function isSignalLine(line: string): boolean {
-  return SIGNAL_RULES.some((rule) => rule.re.test(line));
+  return RESULT_LINE.test(line) || SIGNAL_RULES.some((rule) => rule.re.test(line));
+}
+
+/** Latest explicit "Hasil:/Result:/Ringkasan:" line, if any. */
+function explicitResult(sources: string[]): string {
+  for (const text of [...sources].reverse()) {
+    for (const raw of text.split("\n")) {
+      const match = RESULT_LINE.exec(stripMarkdown(raw));
+      if (match) return clip(oneLine(match[1]), HEADLINE_CHARS);
+    }
+  }
+  return "";
 }
 
 /** Pulls "Keputusan:/Decision:", "Next:/Selanjutnya:" and "Blocker:/Kendala:" lines out of free text. */
@@ -58,6 +71,11 @@ function uniq(items: string[]): string[] {
     seen.add(key);
     return true;
   });
+}
+
+function carriedHeadline(prev: SessionL1 | null): string {
+  const line = prev?.summary.split("\n").find((l) => l.startsWith("Hasil: ") || l.startsWith("Sebelumnya: "));
+  return line ? line.replace(/^(Hasil|Sebelumnya): /, "") : "";
 }
 
 function carriedDecisions(prev: SessionL1 | null): string[] {
@@ -103,8 +121,8 @@ export function summarizeL1(prev: SessionL1 | null, outcome: RunOutcome, opts: S
   if (transcript) flags.add("transcript_ignored");
 
   const signals = extractSignals(combined);
-  let headline = "";
-  if (!transcript) {
+  let headline = transcript ? "" : explicitResult(cleanSources);
+  if (!transcript && !headline) {
     // Prefer the latest comment's first plain line, then the run summary.
     for (const text of [...cleanSources].reverse()) {
       const line = text
@@ -125,6 +143,7 @@ export function summarizeL1(prev: SessionL1 | null, outcome: RunOutcome, opts: S
     lines.push(`Error: ${clip(oneLine(scrubSecrets(normalizeText(outcome.error)).text), 120)}`);
   }
   if (headline) lines.push(`Hasil: ${headline}`);
+  else if (carriedHeadline(prev)) lines.push(`Sebelumnya: ${carriedHeadline(prev)}`);
   for (const b of uniq(signals.blockers)) lines.push(`Kendala: ${b}`);
   const decisions = uniq([...signals.decisions, ...carriedDecisions(prev)]);
   const newDecisionCount = uniq(signals.decisions).length;
