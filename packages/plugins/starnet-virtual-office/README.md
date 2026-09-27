@@ -13,7 +13,9 @@ The pure mapping (`applyEvent`, `deriveDesk`) is in `src/presence.ts` and unit-t
 
 The worker keeps presence plus the last 30 events in plugin state (company scope, key `office`). Data endpoint: `office` → `{ counts, desks[], log[] }`.
 
-Live updates use `usePluginStream("office")` when the host stream bridge is available. On this Paperclip build it returns 501, so the UI falls back to a 2.5 s refresh (see `STARNET_PATCHES.md`).
+Live updates come from `usePluginStream("office")`: every event emits `{type:"office.changed"}` and the page re-reads `office`. While the stream is connected there is **no polling** (`data-live="stream"`). Core publishes `agent.run.*` a few hundred ms *before* it flips the agent status back to idle (and emits no event for that flip), so after a terminal run event the worker re-announces `office.changed` (`eventType:"settle"`) at +1.5 s and +5 s.
+
+A 2.5 s refresh runs **only as a fallback** when the stream fails or is unsupported (`data-live="polling"`, e.g. upstream builds where the bridge still returns 501). On `starnet/main` the bridge is wired by core patch #1 in `STARNET_PATCHES.md`.
 
 ```
 pnpm --filter @starnet/plugin-virtual-office typecheck

@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { applyEvent, deriveDesk, type PresenceMap } from "../src/presence.js";
 import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
 import manifest from "../src/manifest.js";
-import plugin from "../src/worker.js";
+import plugin, { SETTLE_MS } from "../src/worker.js";
 
 const T0 = "2026-09-27T00:00:00.000Z";
 const T1 = "2026-09-27T00:00:05.000Z";
@@ -43,5 +43,22 @@ describe("worker (harness)", () => {
     expect(office.counts).toMatchObject({ total: 1, busy: 1 });
     expect(office.desks[0]).toMatchObject({ state: "busy", runId: "run-1" });
     expect(office.log).toHaveLength(1);
+  });
+
+  it("streams office.changed per event and re-announces after a run ends (status settles later in core)", async () => {
+    vi.useFakeTimers();
+    try {
+      const h = createTestHarness({ manifest });
+      h.seed({ agents: [{ id: "noc", companyId: "c1", name: "NOC Engineer", status: "running" } as never] });
+      const emit = vi.spyOn(h.ctx.streams, "emit");
+      await plugin.definition.setup(h.ctx);
+      await h.emit("agent.run.started", { agentId: "noc", runId: "run-1" }, { companyId: "c1", entityId: "run-1", entityType: "heartbeat_run", occurredAt: T0 });
+      await h.emit("agent.run.finished", { agentId: "noc", runId: "run-1", status: "succeeded" }, { companyId: "c1", entityId: "run-1", entityType: "heartbeat_run", occurredAt: T1 });
+      expect(emit.mock.calls.map((c) => (c[1] as { eventType: string }).eventType)).toEqual(["agent.run.started", "agent.run.finished"]);
+      await vi.advanceTimersByTimeAsync(SETTLE_MS.at(-1)!);
+      expect(emit.mock.calls.map((c) => (c[1] as { eventType: string }).eventType)).toEqual(["agent.run.started", "agent.run.finished", "settle", "settle"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -16,8 +16,8 @@ It is built from Paperclip primitives only. There is no parallel task system and
   - **LLM hook:** implement `ChatRouter` (same input and output) and call `createOfficeChat(myLlmRouter)` in `worker.ts`.
 - **State.** The thread lives in plugin state (company scope, key `thread`, last 300 messages). Updates are serialized per company with `serialByKey` from `@starnet/pack-kit`.
 - **UI.** `usePluginData("thread")` + `usePluginAction("send")`.
-  - Live updates use `usePluginStream("chat")` when the host stream bridge is available.
-  - On this Paperclip build the bridge returns 501 (its stream bus is not wired in `server/src/app.ts`), so the UI falls back to a 2.5 s refresh.
+  - Live updates come from `usePluginStream("chat")`: the worker emits `{type:"thread.changed"}` and the page re-reads `thread`. While the stream is connected there is **no polling** (`data-live="stream"`).
+  - A 2.5 s refresh runs **only as a fallback** when the stream fails or is unsupported (`data-live="polling"`, e.g. upstream builds where the bridge still returns 501). On `starnet/main` the bridge is wired by core patch #1 in `STARNET_PATCHES.md`.
 
 ## Paperclip plugin SDK map (what we evaluated)
 
@@ -28,7 +28,7 @@ It is built from Paperclip primitives only. There is no parallel task system and
   - We use `page` + `sidebar` (and `dashboardWidget` in Virtual Office).
 - **UI hooks.**
   - `usePluginData` / `usePluginAction`: bridge to the worker's `getData` / `performAction`.
-  - `usePluginStream`: SSE `/api/plugins/:id/bridge/stream/:channel`, not wired upstream yet.
+  - `usePluginStream`: SSE `/api/plugins/:id/bridge/stream/:channel` (not wired upstream yet; wired on `starnet/main` by core patch #1).
   - `useHostContext`, `useHostNavigation`, `useHostLocation`, `usePluginToast`.
   - Host components such as `MarkdownBlock` (used for agent replies).
 - **Events (observe-only).** 33 domain events, e.g. `issue.*`, `issue.comment.created`, `agent.run.*`, `agent.status_changed`, `approval.*`, `activity.logged`. They are delivered asynchronously to the worker. Handlers cannot block or modify core actions.

@@ -27,10 +27,17 @@ export function OfficeChatPage({ context }: PluginPageProps) {
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Live: every worker "thread.changed" event refreshes. The host stream bridge can be
-  // unavailable (501 on this Paperclip build), so fall back to a short poll.
+  // Live: every worker "thread.changed" stream event refreshes the thread. Polling (2.5 s)
+  // runs ONLY as a fallback while the stream is down or unsupported (e.g. 501 on hosts
+  // without the stream bridge).
+  const liveMode = stream.connected ? "stream" : stream.connecting ? "connecting" : "polling";
   useEffect(() => { if (stream.events.length) thread.refresh(); }, [stream.events.length]);
-  useEffect(() => { const t = setInterval(() => thread.refresh(), stream.connected ? 15000 : 2500); return () => clearInterval(t); }, [stream.connected]);
+  useEffect(() => { if (stream.connected) thread.refresh(); }, [stream.connected]);
+  useEffect(() => {
+    if (liveMode !== "polling") return;
+    const t = setInterval(() => thread.refresh(), 2500);
+    return () => clearInterval(t);
+  }, [liveMode]);
   const messages = thread.data?.messages ?? [];
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages.length]);
 
@@ -44,10 +51,10 @@ export function OfficeChatPage({ context }: PluginPageProps) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)", maxWidth: 880, margin: "0 auto", padding: 16, gap: 12 }}>
+    <div data-live={liveMode} style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)", maxWidth: 880, margin: "0 auto", padding: 16, gap: 12 }}>
       <div>
         <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>Office Chat</h1>
-        <div style={{ fontSize: 13, opacity: 0.7 }}>Ngobrol dengan kantor. Permintaan kerja otomatis jadi issue untuk agen yang tepat; balasan agen muncul di sini.{stream.connected ? " • live" : " • refresh otomatis 2,5 dtk"}</div>
+        <div style={{ fontSize: 13, opacity: 0.7 }}>Ngobrol dengan kantor. Permintaan kerja otomatis jadi issue untuk agen yang tepat; balasan agen muncul di sini.{liveMode === "stream" ? " • live" : liveMode === "polling" ? " • refresh otomatis 2,5 dtk" : ""}</div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: 12, border: "1px solid rgba(127,127,127,0.25)", borderRadius: 12 }}>
         {thread.loading && !messages.length ? <div style={{ opacity: 0.6 }}>Memuat…</div> : null}

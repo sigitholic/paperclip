@@ -16,15 +16,22 @@ function ago(iso: string | null) {
 }
 
 /**
- * Live office data: refresh on every worker stream event. The host's plugin stream bridge
- * can be unavailable (501 on this Paperclip build), so fall back to a short poll.
+ * Live office data: refresh on every worker "office.changed" stream event. Polling (2.5 s)
+ * runs ONLY as a fallback while the stream is down or unsupported (e.g. 501 on hosts
+ * without the stream bridge).
  */
 function useOffice(companyId: string) {
   const office = usePluginData<Office>("office", { companyId });
   const stream = usePluginStream<{ type: string }>("office", { companyId });
+  const liveMode = stream.connected ? "stream" : stream.connecting ? "connecting" : "polling";
   useEffect(() => { if (stream.events.length) office.refresh(); }, [stream.events.length]);
-  useEffect(() => { const t = setInterval(() => office.refresh(), stream.connected ? 15000 : 2500); return () => clearInterval(t); }, [stream.connected]);
-  return { office, live: stream.connected };
+  useEffect(() => { if (stream.connected) office.refresh(); }, [stream.connected]);
+  useEffect(() => {
+    if (liveMode !== "polling") return;
+    const t = setInterval(() => office.refresh(), 2500);
+    return () => clearInterval(t);
+  }, [liveMode]);
+  return { office, liveMode };
 }
 
 function DeskArt({ state }: { state: DeskState }) {
@@ -63,14 +70,14 @@ function DeskCard({ d }: { d: OfficeDesk }) {
 }
 
 export function VirtualOfficePage({ context }: PluginPageProps) {
-  const { office, live } = useOffice(context.companyId ?? "");
+  const { office, liveMode } = useOffice(context.companyId ?? "");
   const o = office.data;
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+    <div data-live={liveMode} style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
         <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>Virtual Office</h1>
         <div style={{ fontSize: 13, opacity: 0.7 }}>
-          Status diambil dari data Paperclip asli (status agen, run, issue aktif). Tanpa event = idle.{live ? " • live" : " • refresh otomatis 2,5 dtk"}
+          Status diambil dari data Paperclip asli (status agen, run, issue aktif). Tanpa event = idle.{liveMode === "stream" ? " • live" : liveMode === "polling" ? " • refresh otomatis 2,5 dtk" : ""}
           {o ? ` • ${o.counts.busy} bekerja, ${o.counts.idle} idle dari ${o.counts.total} agen` : ""}
         </div>
       </div>

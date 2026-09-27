@@ -143,6 +143,7 @@ import {
   createPluginWorkerManager,
   type PluginWorkerManager,
 } from "./services/plugin-worker-manager.js";
+import { createPluginStreamBus } from "./services/plugin-stream-bus.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
 import { pluginJobStore } from "./services/plugin-job-store.js";
 import { createPluginToolDispatcher } from "./services/plugin-tool-dispatcher.js";
@@ -879,6 +880,7 @@ export async function createApp(
     null;
   let viteDevServer: { close(): Promise<void> } | null = null;
   let viteHmrServer: HttpServer | null = null;
+  const pluginStreamBus = createPluginStreamBus();
   const loader = pluginLoader(
     db,
     {
@@ -893,6 +895,7 @@ export async function createApp(
       jobStore,
       toolDispatcher,
       lifecycleManager: lifecycle,
+      streamBus: pluginStreamBus,
       instanceInfo: {
         instanceId: opts.instanceId ?? "default",
         hostVersion: opts.hostVersion ?? "0.0.0",
@@ -933,7 +936,7 @@ export async function createApp(
       { scheduler, jobStore },
       { workerManager },
       { toolDispatcher },
-      { workerManager },
+      { workerManager, streamBus: pluginStreamBus },
       { toolGateway },
     ),
   );
