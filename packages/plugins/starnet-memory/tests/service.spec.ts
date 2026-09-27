@@ -197,6 +197,8 @@ describe("agent notes, board curation, views", () => {
     const page = await service.pageView(CO, { tier: "quarantine" });
     expect(page.items).toHaveLength(1);
     expect(page.counts).toEqual({ curated: 1, quarantine: 1 });
+    expect(page.agents).toEqual([expect.objectContaining({ id: NOC, runCount: 1, name: expect.stringMatching(/^Agent /) })]);
+    expect(Object.values(agent.labels.issues)[0]).toMatch(/ — /);
     expect((await service.pageView(CO, { q: "sleman", scopeKind: "agent" })).items).toHaveLength(1);
     const savings = await service.savings(CO);
     expect(savings.count).toBe(1);

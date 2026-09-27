@@ -140,4 +140,11 @@ export interface CoreReader {
   handoffComments(companyId: string, issueId: string, agentId: string | null): Promise<HandoffComment[]>;
   /** Size of the naive "send the history" context: this issue's whole thread + the last 24 comments on the agent's other issues. */
   naiveChars(companyId: string, issueId: string, agentId: string | null): Promise<number>;
+  /** Display names for UI labels (at most 50 ids each). */
+  labels(companyId: string, agentIds: string[], issueIds: string[]): Promise<Labels>;
+}
+
+export interface Labels {
+  agents: Record<string, string>;
+  issues: Record<string, string>;
 }

@@ -115,8 +115,10 @@ describe.skipIf(!up)("Starnet memory flow (local instance)", () => {
     const b = view.bundles.find((x) => x.via === "route");
     expect(b.bundleText).toMatch(/^<starnet-context v="1"/);
     expect(b.bundleText).toContain("## Memori agen (run sebelumnya)");
-    expect(b.bundleText).toContain(`router core ${tag}`);
     expect(b.bundleText).toContain(`Jam sibuk ${tag}`);
+    // Agent pins rank above company pins; a bundle carries at most 4 pins.
+    const pinLines = (b.bundleText.split("## Pins\n")[1] ?? "").split("\n").filter((l) => l.startsWith("- "));
+    expect(b.bundleText.includes(`router core ${tag}`) || pinLines.length === 4).toBe(true);
     expect(b.bundleText).not.toContain("ignore previous instructions");
     expect(b.bundleText).not.toContain(fakeSecret);
     expect(b.chars).toBeLessThanOrEqual(5500);
@@ -124,7 +126,7 @@ describe.skipIf(!up)("Starnet memory flow (local instance)", () => {
 
     const comments = await api.get(`/issues/${issue.id}/comments`);
     const noc = (Array.isArray(comments) ? comments : comments.comments ?? []).find((c) => c.authorAgentId === s.nocAgentId && /Hasil:/.test(c.body));
-    expect(noc?.body).toContain(`router core ${tag}`);
+    expect(noc?.body).toContain(`Jam sibuk ${tag}`);
     expect(noc?.body).toMatch(/hemat \d+(\.\d+)?%/);
     await waitFor(() => stream.events.find((e) => e.receivedAt >= t0 && e.type === "bundle.logged" && e.issueId === issue.id), { what: "stream bundle.logged" });
 
@@ -148,6 +150,9 @@ describe.skipIf(!up)("Starnet memory flow (local instance)", () => {
     const agent = await data("agent-memory", { agentId: s.nocAgentId });
     expect(agent.agentL1.summary).toMatch(/Hasil:/);
     expect(agent.bundles.length).toBeGreaterThan(0);
+    // The host's agent detail page does not render plugin detail tabs yet, so the Memory page has a per-agent view.
+    const pageData = await data("memory-page", {});
+    expect(pageData.agents.find((x) => x.id === s.nocAgentId)?.name).toBe("NOC Engineer");
     const savings = await data("savings", {});
     report.ui = { slots, savings };
   }, 30_000);

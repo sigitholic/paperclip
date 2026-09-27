@@ -231,6 +231,7 @@ function Admissions({ rows }: { rows: AdmissionLogRow[] }) {
 
 interface IssueMemory {
   issue: { id: string; identifier: string | null; title: string; assigneeAgentId: string | null };
+  labels?: { agents: Record<string, string>; issues: Record<string, string> };
   l1s: L1Row[];
   agentL1: L1Row | null;
   pins: StoredItem[];
@@ -264,7 +265,7 @@ export function IssueMemoryTab({ context }: PluginDetailTabProps) {
         {d.bundles[0] ? <BundleCard bundle={d.bundles[0]} title={`${d.bundles.length} bundle tercatat`} /> : <Empty>Belum ada agen yang mengambil konteks untuk issue ini.</Empty>}
       </Section>
       <Section title="Ringkasan sesi (L1)" hint="Dibuat otomatis dan deterministik dari hasil run (tanpa LLM), maks 480 karakter." testId="l1-section">
-        {d.l1s.length ? d.l1s.map((l) => <L1Card key={l.agentId} l1={l} label="Issue ini" />) : <Empty>Belum ada ringkasan untuk issue ini.</Empty>}
+        {d.l1s.length ? d.l1s.map((l) => <L1Card key={l.agentId} l1={l} label={`Issue ini · ${d.labels?.agents[l.agentId] ?? "agen"}`} />) : <Empty>Belum ada ringkasan untuk issue ini.</Empty>}
         {d.agentL1 ? <L1Card l1={d.agentL1} label="Agen (run sebelumnya, lintas issue)" /> : null}
       </Section>
       <Section title="Pins" hint="Selalu ikut ke agen (maks 4 per bundle)." testId="pins-section">
@@ -297,11 +298,15 @@ interface AgentMemory {
   quarantine: StoredItem[];
   bundles: BundleLogRow[];
   admissions: AdmissionLogRow[];
+  labels?: { agents: Record<string, string>; issues: Record<string, string> };
 }
 
 export function AgentMemoryTab({ context }: PluginDetailTabProps) {
-  const companyId = context.companyId ?? "";
-  const agentId = context.entityId;
+  return <AgentMemoryPanel companyId={context.companyId ?? ""} agentId={context.entityId} />;
+}
+
+/** Agent memory view. Used by the agent detail tab (when the host renders it) and by the Memory page. */
+function AgentMemoryPanel({ companyId, agentId }: { companyId: string; agentId: string }) {
   const view = usePluginData<AgentMemory>("agent-memory", { companyId, agentId });
   const mode = useLive(companyId, view.refresh);
   const actions = useItemActions(companyId, view.refresh);
@@ -315,7 +320,7 @@ export function AgentMemoryTab({ context }: PluginDetailTabProps) {
         <LiveBadge mode={mode} />
       </div>
       <Section title="Memori agen (L1 lintas issue)" hint="Ringkasan run terakhir agen ini; dipakai saat issue baru belum punya riwayat.">
-        {d.agentL1 ? <L1Card l1={d.agentL1} label="Agen" /> : <Empty>Belum ada run yang tercatat.</Empty>}
+        {d.agentL1 ? <L1Card l1={d.agentL1} label={d.labels?.agents[agentId] ?? "Agen"} /> : <Empty>Belum ada run yang tercatat.</Empty>}
       </Section>
       <Section title="Pins agen">
         <ItemList items={d.pins} actions={actions} empty="Belum ada pin untuk agen ini." />
@@ -328,7 +333,7 @@ export function AgentMemoryTab({ context }: PluginDetailTabProps) {
         <ItemList items={d.quarantine} actions={actions} empty="Karantina kosong." />
       </Section>
       <Section title="Ringkasan per issue">
-        {d.l1s.length ? d.l1s.map((l) => <L1Card key={l.issueId} l1={l} label={`Issue ${l.issueId.slice(0, 8)}`} />) : <Empty>Belum ada.</Empty>}
+        {d.l1s.length ? d.l1s.map((l) => <L1Card key={l.issueId} l1={l} label={d.labels?.issues[l.issueId] ?? `Issue ${l.issueId.slice(0, 8)}`} />) : <Empty>Belum ada.</Empty>}
       </Section>
       <Section title="Bundle terakhir">
         {d.bundles[0] ? <BundleCard bundle={d.bundles[0]} title="Terakhir" /> : <Empty>Belum ada bundle.</Empty>}
@@ -348,6 +353,8 @@ interface PageData {
   savings: { count: number; avgChars: number; avgNaiveChars: number; avgTokens: number; avgNaiveTokens: number };
   admissions: AdmissionLogRow[];
   l1s: L1Row[];
+  agents?: Array<{ id: string; name: string; updatedAt: string | null; runCount: number }>;
+  labels?: { agents: Record<string, string>; issues: Record<string, string> };
 }
 
 export function MemoryPage({ context }: PluginPageProps) {
@@ -355,6 +362,7 @@ export function MemoryPage({ context }: PluginPageProps) {
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [tier, setTier] = useState("");
+  const [agentPick, setAgentPick] = useState("");
   const view = usePluginData<PageData>("memory-page", { companyId, q: query, tier });
   const mode = useLive(companyId, view.refresh);
   const actions = useItemActions(companyId, view.refresh);
@@ -393,10 +401,28 @@ export function MemoryPage({ context }: PluginPageProps) {
       </Section>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
         <Section title="Ringkasan sesi terbaru (L1)">
-          {d?.l1s.length ? d.l1s.slice(0, 6).map((l) => <L1Card key={l.agentId + l.issueId} l1={l} label={l.issueId.startsWith("00000000") ? "Agen" : `Issue ${l.issueId.slice(0, 8)}`} />) : <Empty>Belum ada.</Empty>}
+          {d?.l1s.length
+            ? d.l1s.slice(0, 6).map((l) => {
+                const agent = d.labels?.agents[l.agentId] ?? "Agen";
+                const label = l.issueId.startsWith("00000000") ? `${agent} (lintas issue)` : `${d.labels?.issues[l.issueId] ?? `Issue ${l.issueId.slice(0, 8)}`} · ${agent}`;
+                return <L1Card key={l.agentId + l.issueId} l1={l} label={label} />;
+              })
+            : <Empty>Belum ada.</Empty>}
         </Section>
         <Section title="Filter memori (terbaru)"><Admissions rows={d?.admissions ?? []} /></Section>
       </div>
+      <Section title="Memori per agen" hint="Halaman detail agen belum menampilkan tab plugin, jadi memori agen dilihat di sini." testId="agent-picker">
+        {d?.agents?.length ? (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {d.agents.map((a) => (
+              <button key={a.id} type="button" onClick={() => setAgentPick(agentPick === a.id ? "" : a.id)} style={agentPick === a.id ? primary : btn}>
+                {a.name} · {fmt(a.runCount)} run
+              </button>
+            ))}
+          </div>
+        ) : <Empty>Belum ada agen dengan memori.</Empty>}
+        {agentPick ? <AgentMemoryPanel companyId={companyId} agentId={agentPick} /> : null}
+      </Section>
     </div>
   );
 }

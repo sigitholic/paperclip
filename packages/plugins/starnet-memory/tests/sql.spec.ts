@@ -77,7 +77,9 @@ describe("plugin SQL passes the host's validators", () => {
     expect(await core.getIssue(ID, ID)).toBeNull();
     await core.handoffComments(ID, ID, null);
     expect(await core.naiveChars(ID, ID, ID)).toBe(0);
-    expect(queries.length).toBe(15);
+    expect(await core.labels(ID, [ID, ID, "not-a-uuid"], [ID])).toEqual({ agents: {}, issues: {} });
+    expect(await core.labels(ID, [], [])).toEqual({ agents: {}, issues: {} });
+    expect(queries.length).toBe(17);
     expect(executes.length).toBe(6);
   });
 

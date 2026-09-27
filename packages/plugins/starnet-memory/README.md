@@ -22,6 +22,12 @@ No Paperclip core files are changed. Everything uses the public plugin SDK.
 - A plugin cannot inject text into another adapter's prompt. Agents **pull** the pack (route or tool).
   The core prompt is unchanged; the full saving arrives with the Starnet runtime adapter (Phase 2).
 - The worker cannot see the tool gateway's grant list for a run, so the caller passes `?tools=`.
+- Host UI: the agent detail page does not render plugin `detailTab` slots yet, so the Memory page has a
+  per-agent view ("Memori per agen"). The issue **Memori** tab is visible only with the classic task
+  interface (instance experimental setting); the default chat view hides the tab strip.
+- A board comment on a finished issue that has an assignee reopens it (core behaviour). Put board facts on
+  an unassigned issue, an open issue, or use the form in the Memory UI.
+- A bundle carries at most 4 pins (issue > agent > project > company).
 
 ## Dev
 
