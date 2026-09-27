@@ -75,7 +75,7 @@ fi
 if [ -n "$CONFLICTS" ]; then
   say "CONFLICTS:"; echo "$CONFLICTS" | sed 's/^/  - /'
   { echo "### ⚠️ Conflicts (resolve on this branch)"; echo; echo "$CONFLICTS" | sed 's/^/- `/; s/$/`/'; echo;
-    echo "Resolve locally: \`git fetch origin && git checkout $BR\`, fix the markers, keep STARNET-PATCH markers + STARNET_PATCHES.md accurate, run the checks, push."; } >> "$REPORT"
+    echo "Resolve locally: \`git fetch origin && git checkout $BR\`, resolve ONLY by keeping upstream code plus the approved P-0 streaming patch (no other core edits; if that is not possible, stop and report), keep STARNET_PATCHES.md accurate, run the checks, push."; } >> "$REPORT"
   if [ "$PR" = 1 ]; then
     git add -A && git commit -q --no-verify -m "chore(sync): merge upstream $UP_SHA (UNRESOLVED CONFLICTS)"
     git push -q -u origin "$BR"
@@ -95,7 +95,7 @@ if ! git diff --quiet pnpm-lock.yaml; then git add pnpm-lock.yaml && git commit 
 FAILED=""
 run() { local name=$1; shift; say "check: $name"; if "$@" >/tmp/starnet-sync-check.log 2>&1; then echo "- ✅ $name" >> "$REPORT"; else echo "- ❌ $name" >> "$REPORT"; tail -40 /tmp/starnet-sync-check.log; FAILED="$FAILED $name"; fi; }
 echo "### Checks" >> "$REPORT"
-run "STARNET-PATCH markers vs STARNET_PATCHES.md (+ core files vs upstream)" node packages/starnet-devkit/scripts/patch-markers.mjs --against "$UPSTREAM_REF"
+run "no core edits beyond P-0 (core-diff-check)" node packages/starnet-devkit/scripts/core-diff-check.mjs --against "$UPSTREAM_REF"
 if [ "$CHECKS" = 1 ]; then
   F=(--filter "./packages/plugins/starnet-*" --filter "./packages/starnet-*" --filter "./packages/adapters/starnet-*")
   run "build plugin SDK" pnpm --filter "@paperclipai/plugin-sdk..." build
@@ -105,7 +105,7 @@ if [ "$CHECKS" = 1 ]; then
   run "repo boundary checks" bash -c "node scripts/check-forbidden-tokens.mjs && node scripts/check-module-boundaries.mjs && node scripts/check-token-gates.mjs"
   [ "$SERVER_TESTS" = 1 ] && run "P-0 server tests" bash -c "cd server && npx vitest run src/__tests__/plugin-stream-bridge.test.ts src/__tests__/plugin-routes-authz.test.ts"
 fi
-{ echo; echo "### Core files changed vs upstream (must all be in STARNET_PATCHES.md)"; echo; node packages/starnet-devkit/scripts/patch-markers.mjs --against "$UPSTREAM_REF" 2>&1 | sed 's/^/    /'; } >> "$REPORT"
+{ echo; echo "### Core files changed vs upstream (only the P-0 files are allowed)"; echo; node packages/starnet-devkit/scripts/core-diff-check.mjs --against "$UPSTREAM_REF" 2>&1 | sed 's/^/    /'; } >> "$REPORT"
 NEW_WF=$(git diff --name-only --diff-filter=A "$OLD_BASE" "$UPSTREAM_REF" -- .github/workflows)
 [ -n "$NEW_WF" ] && { echo; echo "### New upstream workflows — disable in the fork (\`gh workflow disable <file> --repo $FORK_REPO\`)"; echo "$NEW_WF" | sed 's/^/- /'; } >> "$REPORT"
 MIGRATIONS=$(git diff --name-only --diff-filter=A "$OLD_BASE" "$UPSTREAM_REF" -- 'packages/db/src/migrations/*' | head -20)

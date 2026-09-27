@@ -1,5 +1,6 @@
 # Starnet fork CI: typecheck + test + build every Starnet package, the repo boundary
-# checks, and the regression test for core patch P-0 (plugin stream bridge).
+# checks, the regression test for core patch P-0 (plugin stream bridge), and the
+# no-core-edits guard (core-diff-check).
 # Upstream workflows are disabled in this fork via repo Actions settings (see
 # STARNET_PATCHES.md "Fork CI"), so this is the only workflow that runs here.
 name: starnet-ci
@@ -30,6 +31,8 @@ jobs:
       DATABASE_URL: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # core-diff-check needs the merge-base with upstream master
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
@@ -70,5 +73,7 @@ jobs:
         working-directory: server
         run: npx vitest run src/__tests__/plugin-stream-bridge.test.ts src/__tests__/plugin-routes-authz.test.ts
 
-      - name: STARNET-PATCH markers match STARNET_PATCHES.md
-        run: node packages/starnet-devkit/scripts/patch-markers.mjs
+      - name: No core edits beyond the approved P-0 streaming patch
+        run: |
+          git fetch --no-tags --quiet https://github.com/paperclipai/paperclip.git master
+          node packages/starnet-devkit/scripts/core-diff-check.mjs --against FETCH_HEAD

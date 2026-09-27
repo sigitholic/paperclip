@@ -84,7 +84,6 @@ export function createPluginStreamBus(): PluginStreamBus {
  * Build the worker manager's `onStreamNotification` callback that publishes a
  * worker's `ctx.streams.open/emit/close` notifications onto the bus for
  * `pluginId` (the plugin's registry id, as used by the SSE bridge route).
- * STARNET-PATCH P-0
  */
 export function forwardStreamNotificationsToBus(
   bus: PluginStreamBus,

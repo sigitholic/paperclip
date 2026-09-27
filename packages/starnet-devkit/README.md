@@ -17,7 +17,7 @@ Developer tooling for the Starnet fork. It talks **REST only** to a **local** Pa
 | `node packages/starnet-devkit/scripts/fake-servers.mjs` | Fake RouterOS REST (`127.0.0.1:18728`, basic auth) and GenieACS NBI (`127.0.0.1:17557`) for a `--live` demo. Logs method, path and auth status only. |
 | `pnpm --filter @starnet/devkit e2e` | E2E against the running instance; skipped if it is down. Seeds first. In live mode it starts the fake servers itself. Writes `.state/last-e2e.json`. |
 | `pnpm --filter @starnet/devkit test` | Unit tests (fake servers, env guard) + patch-marker check. Runs in CI. |
-| `node packages/starnet-devkit/scripts/patch-markers.mjs [--against upstream/master]` | `STARNET_PATCHES.md` ⇄ `// STARNET-PATCH P-n` markers, plus the list of core files changed. |
+| `node packages/starnet-devkit/scripts/core-diff-check.mjs [--against upstream/master]` | Fails if any Paperclip core file differs from upstream except the four files of the approved streaming patch P-0 (the no-core-edits rule). Runs in CI and in the sync. |
 
 ## What the E2E covers
 
@@ -36,9 +36,9 @@ Example (`mock`, 27 Sep 2026): run started +108 ms, desk busy +341 ms, reply +0.
 
 1. `git fetch upstream master`. If `starnet/main` already contains upstream, the script stops with "up to date".
 2. Branch `starnet/sync-YYYYMMDD` from `origin/starnet/main`, then `git merge --no-ff upstream/master` (a merge, not a rebase, so fork history stays intact).
-3. On conflicts, `pnpm-lock.yaml` is taken from upstream and regenerated. Any other conflict stops the script: it lists the files and exits with code 2. With `--pr`, it commits the markers and opens a **draft** fork PR listing the conflicting files.
+3. On conflicts, `pnpm-lock.yaml` is taken from upstream and regenerated. Any other conflict stops the script: it lists the files and exits with code 2. Conflicts are never resolved by editing core beyond keeping P-0 intact; stop and report instead. With `--pr`, it commits the markers and opens a **draft** fork PR listing the conflicting files.
 4. `pnpm install --no-frozen-lockfile`; the regenerated lockfile is committed.
-5. Checks run: the STARNET-PATCH markers match `STARNET_PATCHES.md`, and every core file that differs from upstream is listed there. Then the Starnet typecheck, test and build, the repo boundary checks, and (with `--server-tests`) the P-0 server tests. A failed check exits with code 3; with `--pr` the PR is opened as a draft.
+5. Checks run: no core file differs from upstream except the P-0 streaming patch (`core-diff-check.mjs`). Then the Starnet typecheck, test and build, the repo boundary checks, and (with `--server-tests`) the P-0 server tests. A failed check exits with code 3; with `--pr` the PR is opened as a draft.
 6. A report goes to `.state/sync-report.md`: upstream commits, conflicts, checks, core files, **new upstream workflows to disable**, and new DB migrations. With `--pr` the report becomes the PR body. The PR always targets `sigitholic/paperclip:starnet/main`; nothing is opened upstream.
 
 After merging a sync PR:
