@@ -48,6 +48,13 @@ const pppoe = await tool("mikrotik.list_pppoe_active", { limit: 5 });
 const res = await tool("mikrotik.system_resource");
 const cpe = await tool("genieacs.list_devices", { limit: 100 });
 
+// Optional demo knob: keep the run open a bit so live UIs (Virtual Office) can be observed. Off by default.
+const demoDelayMs = Math.min(Number(process.env.NOC_DEMO_DELAY_MS ?? 0) || 0, 60000);
+if (demoDelayMs > 0) {
+  console.log(`[noc] NOC_DEMO_DELAY_MS=${demoDelayMs}: holding the run open`);
+  await new Promise((r) => setTimeout(r, demoDelayMs));
+}
+
 const r = res.data.resource;
 const offline = cpe.data.devices.filter((d) => !d.online);
 // Drill into the first offline CPE (exercises genieacs.device_status).
@@ -59,7 +66,7 @@ const alerts = [
 ].filter(Boolean);
 const mockSources = [...new Set([[pppoe, "mikrotik"], [res, "mikrotik"], [cpe, "genieacs"]].filter(([x]) => x.content.startsWith("[MOCK")).map(([, s]) => s))];
 const summary = [
-  `**Daily NOC check**${mockSources.length ? ` — ⚠️ MOCK data for: ${mockSources.join(", ")} (no device configured)` : " — live data"}`,
+  `**${issue.title}**${mockSources.length ? ` — ⚠️ MOCK data for: ${mockSources.join(", ")} (no device configured)` : " — live data"}`,
   "",
   `- Active PPPoE sessions: **${pppoe.data.total}**`,
   `- Router ${r.board} ${r.version}: CPU **${r.cpuLoadPct}%**, memory **${r.memUsedPct}%**, uptime ${r.uptime}`,

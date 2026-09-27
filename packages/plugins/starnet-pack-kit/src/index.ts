@@ -58,3 +58,17 @@ export function packResult(mode: PackMode, source: string, summary: string, data
   const label = mode === "mock" ? "[MOCK DATA — no device configured] " : "";
   return { content: `${label}${source}: ${summary}`, data: { mode, source, ...data } };
 }
+
+/**
+ * Run async work one-at-a-time per key (e.g. per company). Plugin state has no
+ * compare-and-set, so read-modify-write of a state blob must be serialized.
+ */
+export function serialByKey() {
+  const tails = new Map<string, Promise<unknown>>();
+  return function run<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const next = (tails.get(key) ?? Promise.resolve()).catch(() => undefined).then(work);
+    tails.set(key, next);
+    void next.finally(() => { if (tails.get(key) === next) tails.delete(key); }).catch(() => undefined);
+    return next;
+  };
+}

@@ -77,6 +77,10 @@ Until upstream adds a `risk` field:
 4. **Defence in depth (planned).** Write handlers will also refuse to run unless the plugin config has an explicit `allowWrites: true` for that company.
 5. **Upstream PR wanted.** An optional `risk: "read" | "write" | "destructive"` field on `PluginToolDeclaration`, preferred over the name heuristic (see `STARNET_PATCHES.md`).
 
+## Demo knob
+
+`agent/noc-check.mjs` honours `NOC_DEMO_DELAY_MS` (off by default, capped at 60 s). It keeps the run open after the tool calls, so live UIs such as Virtual Office can be observed. Set it in the agent's `adapterConfig.env`.
+
 ## Develop
 
 ```

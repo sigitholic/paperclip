@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertGatewayRisk, gatewayRisk, packResult } from "../src/index.js";
+import { assertGatewayRisk, gatewayRisk, packResult, serialByKey } from "../src/index.js";
 
 describe("gatewayRisk", () => {
   it("matches the gateway heuristic for read, write and destructive names", () => {
@@ -18,5 +18,16 @@ describe("packResult", () => {
     expect(r.content).toMatch(/^\[MOCK DATA/);
     expect(r.data).toMatchObject({ mode: "mock", source: "mikrotik", count: 3 });
     expect(packResult("live", "mikrotik", "3 sessions", {}).content).toBe("mikrotik: 3 sessions");
+  });
+});
+
+describe("serialByKey", () => {
+  it("runs work for the same key one at a time, even after a failure", async () => {
+    const run = serialByKey();
+    const order: string[] = [];
+    const slow = (tag: string, ms: number) => async () => { order.push(`${tag}:start`); await new Promise((r) => setTimeout(r, ms)); order.push(`${tag}:end`); };
+    const failing = run("c1", async () => { throw new Error("boom"); });
+    await Promise.all([run("c1", slow("a", 20)), run("c1", slow("b", 1)), failing.catch(() => undefined)]);
+    expect(order).toEqual(["a:start", "a:end", "b:start", "b:end"]);
   });
 });
