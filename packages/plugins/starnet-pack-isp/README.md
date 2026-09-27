@@ -94,6 +94,8 @@ Until upstream adds a `risk` field:
 
 ## Demo knob
 
+If the `starnet.memory` plugin is installed, `agent/noc-check.mjs` pulls its curated context pack once per run (`GET /api/plugins/starnet.memory/api/context/:issueId?tools=…`, run token). It logs sizes only, lists the board pins it used in its comment, and continues without memory if the plugin is missing. Its comment starts with a `Hasil:` line, which the memory plugin uses as the L1 headline.
+
 `agent/noc-check.mjs` honours `NOC_DEMO_DELAY_MS` (off by default, capped at 60 s). It keeps the run open after the tool calls, so live UIs such as Virtual Office can be observed. Set it in the agent's `adapterConfig.env`.
 
 ## Develop

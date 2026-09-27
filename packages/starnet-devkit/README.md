@@ -15,7 +15,7 @@ Developer tooling for the Starnet fork. It talks **REST only** to a **local** Pa
 | --- | --- |
 | `node packages/starnet-devkit/scripts/demo-seed.mjs [--live\|--mock] [--company "Starnet Demo"]` | Idempotent. Creates the company, checks that the Starnet plugins are installed and `ready` (installs from local paths if missing), runs the ISP pack `setup` (NOC Engineer + Daily PPPoE check), creates the deny-by-default tool profile "Starnet NOC (read-only)" and binds it to the NOC agent, then sets the pack config: mock, or live against the fake servers. |
 | `node packages/starnet-devkit/scripts/fake-servers.mjs` | Fake RouterOS REST (`127.0.0.1:18728`, basic auth) and GenieACS NBI (`127.0.0.1:17557`) for a `--live` demo. Logs method, path and auth status only. |
-| `pnpm --filter @starnet/devkit e2e` | E2E against the running instance; skipped if it is down. Seeds first. In live mode it starts the fake servers itself. Writes `.state/last-e2e.json`. |
+| `pnpm --filter @starnet/devkit e2e` | E2E against the running instance; skipped if it is down. Seeds first. In live mode it starts the fake servers itself. Writes `.state/last-e2e.json` and `.state/last-e2e-memory.json`. If your shell exports another `PAPERCLIP_URL`, pass `PAPERCLIP_URL=http://127.0.0.1:3100`. |
 | `pnpm --filter @starnet/devkit test` | Unit tests (fake servers, env guard) + patch-marker check. Runs in CI. |
 | `node packages/starnet-devkit/scripts/core-diff-check.mjs [--against upstream/master]` | Fails if any Paperclip core file differs from upstream except the four files of the approved streaming patch P-0 (the no-core-edits rule). Runs in CI and in the sync. |
 
@@ -27,8 +27,14 @@ Developer tooling for the Starnet fork. It talks **REST only** to a **local** Pa
    - The NOC run calls the four ISP tools through the tool gateway. In live mode, the fake servers see authenticated requests and the reply contains `FAKE-CCR2004`; in mock mode it contains `MOCK`.
    - The agent reply appears in the chat thread, the issue becomes `done`, the office stream delivers `agent.run.finished`, and the desk returns to **idle**.
 2. **Routine latency (plan 0.4).** Three manual routine runs; each is timed from `run-daily-check` to `agent.run.started`. The test asserts p95 ≤ 15 s.
+3. **Starnet Memory (`e2e/memory-flow.e2e.test.mjs`).**
+   - Run 1 (NOC) → the memory plugin writes L1 for the issue and for the agent from run events; the `memory` stream delivers `l1.updated`.
+   - Board writes: a `catat:` comment on an unassigned issue (company-scope pin), a pin from the Memory UI action (agent scope), a poisoning attempt (quarantined), a secret (rejected, not stored) and a raw transcript (rejected). The test checks the secret never appears in memory.
+   - Run 2 on a new issue → the NOC script pulls its context pack from `GET /api/plugins/starnet.memory/api/context/:issueId` with its run token. The pack contains the agent L1 from run 1 and both pins, and no quarantined text; the NOC comment lists the pins and the savings.
+   - Size vs a naive history dump (this issue's thread + the last 24 comments on the agent's other issues) is reported; the UI slots (page, sidebar, 2 detail tabs, widget) and the UI data are checked.
+   - Pins created by the test are forgotten afterwards unless `STARNET_E2E_KEEP_MEMORY=1`.
 
-Example (`mock`, 27 Sep 2026): run started +108 ms, desk busy +341 ms, reply +0.9 s, desk idle +1.2 s, routine p95 91 ms.
+Example (`mock`, 27 Sep 2026): run started +108 ms, desk busy +341 ms, reply +0.9 s, desk idle +1.2 s, routine p95 91 ms. Memory: context pack 665 chars (~167 tokens) vs naive history 11 906 chars (~2 977 tokens), 94.4% smaller.
 
 ## Upstream sync (weekly)
 

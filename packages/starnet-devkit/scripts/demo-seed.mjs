@@ -17,6 +17,7 @@ export const PLUGINS = {
   "starnet.pack-isp": "packages/plugins/starnet-pack-isp",
   "starnet.office-chat": "packages/plugins/starnet-office-chat",
   "starnet.virtual-office": "packages/plugins/starnet-virtual-office",
+  "starnet.memory": "packages/plugins/starnet-memory",
 };
 export const ISP_TOOLS = ["mikrotik.list_pppoe_active", "mikrotik.system_resource", "genieacs.list_devices", "genieacs.device_status"].map((t) => `starnet.pack-isp:${t}`);
 export const FAKE = { routerosPort: 18728, genieacsPort: 17557, routerosUser: "noc-ro" };
