@@ -61,13 +61,15 @@ export interface BundleInput {
   handoff?: string[];
   grantedTools?: string[];
   l1?: SessionL1 | null;
+  /** Agent-level L1 (the agent's recent runs across issues), e.g. for routine runs on fresh issues. */
+  agentL1?: SessionL1 | null;
   /** Pinned items, most important first. Only `curated` pins are used. */
   pins?: MemoryItem[];
   /** Recall hits (L2/L3), best first. `quarantine` items are never used. */
   hits?: MemoryItem[];
 }
 
-export type BundleSectionName = "task" | "handoff" | "tools" | "l1" | "pins" | "hits";
+export type BundleSectionName = "task" | "handoff" | "tools" | "l1" | "agent" | "pins" | "hits";
 
 export interface BundleSectionMeta {
   name: BundleSectionName;
@@ -85,6 +87,7 @@ export interface BundleBudgets {
   tools: number;
   toolCount: number;
   l1: number;
+  agentL1: number;
   pins: number;
   pinChars: number;
   hits: number;

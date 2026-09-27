@@ -61,6 +61,15 @@ describe("summarizeL1", () => {
     assert.ok(lines.indexOf("Keputusan: eskalasi ke vendor") < lines.indexOf("Keputusan: CPE offline dicek teknisi lapangan"));
   });
 
+  test("a run without a result keeps the previous result as 'Sebelumnya:'", () => {
+    const l1 = summarizeL1(null, RUN1);
+    const l2 = summarizeL1(l1, { runId: "88888888", status: "failed", finishedAt: "2026-09-28T00:00:00Z", error: "timeout" });
+    assert.ok(l2.summary.includes("Error: timeout"), l2.summary);
+    assert.ok(/Sebelumnya: \S/.test(l2.summary), l2.summary);
+    const l3 = summarizeL1(l2, { runId: "99999999", status: "failed", finishedAt: "2026-09-29T00:00:00Z" });
+    assert.equal(l3.summary.match(/Sebelumnya: .*/)?.[0], l2.summary.match(/Sebelumnya: .*/)?.[0]);
+  });
+
   test("secrets scrubbed, poison lines dropped, flags set", () => {
     const l1 = summarizeL1(null, {
       runId: "33333333",
@@ -99,6 +108,18 @@ describe("summarizeL1", () => {
     assert.equal(l1.summary, "Run 55555555 dibatalkan 2026-09-27 00:00Z\nError: stopped");
     const ok = summarizeL1(null, { runId: "66666666", status: "succeeded", finishedAt: "2026-09-27T00:00:00Z", error: "ignored" });
     assert.equal(ok.summary, "Run 66666666 selesai 2026-09-27 00:00Z");
+  });
+});
+
+describe("summarizeL1: explicit result line", () => {
+  test("Hasil:/Result: line wins over the first plain line", () => {
+    const l1 = summarizeL1(null, {
+      runId: "77777777",
+      status: "succeeded",
+      finishedAt: "2026-09-27T00:00:00Z",
+      comments: ["**Daily PPPoE check** — MOCK\n- detail\nHasil: PPPoE aktif 812, CPE online 8/10, alert: none"],
+    });
+    assert.equal(l1.summary.split("\n")[1], "Hasil: PPPoE aktif 812, CPE online 8/10, alert: none");
   });
 });
 

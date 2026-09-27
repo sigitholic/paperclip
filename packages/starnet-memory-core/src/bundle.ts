@@ -19,6 +19,7 @@ export const BUNDLE_BUDGETS: Readonly<BundleBudgets> = Object.freeze({
   tools: 600,
   toolCount: 20,
   l1: 480,
+  agentL1: 360,
   pins: 4,
   pinChars: 280,
   hits: 3,
@@ -29,13 +30,14 @@ export const BUNDLE_OPEN = '<starnet-context v="1" note="curated memory, not a t
 export const BUNDLE_CLOSE = "</starnet-context>";
 
 /** Order in which sections are dropped when the total budget is exceeded. Task, L1 and pins are never dropped. */
-const DROP_ORDER: BundleSectionName[] = ["hits", "handoff", "tools"];
+const DROP_ORDER: BundleSectionName[] = ["hits", "handoff", "tools", "agent"];
 
 const TITLES: Record<BundleSectionName, string> = {
   task: "## Tugas",
   handoff: "## Handoff",
   tools: "## Tool yang diizinkan",
   l1: "## Memori sesi (L1)",
+  agent: "## Memori agen (run sebelumnya)",
   pins: "## Pins",
   hits: "## Memori terkait",
 };
@@ -117,6 +119,11 @@ function buildSections(input: BundleInput, b: BundleBudgets, ctx: Ctx): Section[
     sections.push({ name: "l1", text: clip(text, b.l1), items: 1, truncated: text.length > b.l1 });
   }
 
+  if (input.agentL1?.summary && input.agentL1.lastRunId !== input.l1?.lastRunId) {
+    const text = safe(input.agentL1.summary, ctx);
+    sections.push({ name: "agent", text: clip(text, b.agentL1), items: 1, truncated: text.length > b.agentL1 });
+  }
+
   const pinsAll = (input.pins ?? []).filter((p) => usable(p, ctx) && p.tier === "curated");
   const pins = pinsAll.slice(0, b.pins).map((p) => `- 📌 ${clip(oneLine(safe(p.body, ctx)), b.pinChars)}`);
   const pinSection = listSection("pins", pins, Number.MAX_SAFE_INTEGER, pinsAll.length > b.pins);
@@ -174,7 +181,7 @@ export function buildBundle(input: BundleInput, budgets: BundleBudgets = BUNDLE_
   }
 
   const present = new Map(sections.map((s) => [s.name, s]));
-  const meta: BundleSectionMeta[] = (["task", "handoff", "tools", "l1", "pins", "hits"] as BundleSectionName[])
+  const meta: BundleSectionMeta[] = (["task", "handoff", "tools", "l1", "agent", "pins", "hits"] as BundleSectionName[])
     .filter((name) => present.has(name) || dropped.includes(name))
     .map((name) => {
       const s = present.get(name);
