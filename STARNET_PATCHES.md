@@ -23,5 +23,7 @@ Core patch P-0 arrived with `starnet/plugin-stream`. Every patched line carries 
 
 - Starnet CI is our own workflow, `.github/workflows/starnet-ci.yml` (runs on PRs/pushes to `starnet/**`, guarded by `github.repository == 'sigitholic/paperclip'`).
 - Upstream workflows under `.github/workflows/` are **not edited**. They are switched off in this fork through the repository Actions settings (`PUT /repos/sigitholic/paperclip/actions/workflows/<id>/disable`), so they neither run nor fail noisily here. To re-check: `gh workflow list --repo sigitholic/paperclip --all`.
-- If upstream adds a new workflow, the weekly sync PR will show it; disable it the same way (the sync script prints any enabled non-Starnet workflow).
+- Disabled so far (they registered and ran once on the first fork PR, #4): `pr.yml` (calls upstream's trusted reusable workflow on paperclipai runners) and `commitperclip-review.yml` (`pull_request_target` review bot; needs upstream secrets). Other upstream workflows only trigger on `master`, tags, schedules or specific paths and have not registered in the fork.
+- If upstream adds a new workflow, the weekly sync report lists it under "New upstream workflows"; disable it the same way.
+- Weekly upstream sync: `packages/starnet-devkit/scripts/upstream-sync.sh` + `.github/workflows/starnet-upstream-sync.yml` (see `packages/starnet-devkit/README.md`).
 
