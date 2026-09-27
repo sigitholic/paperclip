@@ -97,7 +97,9 @@ const manifest: PaperclipPluginManifestV1 = {
         timeoutSec: 120,
       },
       runtimeConfig: { heartbeat: { enabled: false } },
-      permissions: { pluginTools: [PLUGIN_ID] },
+      // Least privilege: explicit booleans override the host's "new agent may hire agents" default.
+      // (Existing agents are not updated by reconcile; see README "Least privilege".)
+      permissions: { pluginTools: [PLUGIN_ID], canCreateAgents: false, canCreateSkills: false },
       status: "idle",
       budgetMonthlyCents: 0,
     },

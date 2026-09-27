@@ -53,6 +53,21 @@ TLS limitation: Node `fetch` rejects self-signed RouterOS certificates. Use a CA
    - API: `POST /api/companies/:id/tools/profiles`, then `…/tools/profiles/:profileId/bind`.
 4. Optional manual run: `POST /api/plugins/:pluginId/actions/run-daily-check` (same body as setup).
 
+## Least privilege
+
+- New NOC agents are declared with `canCreateAgents: false, canCreateSkills: false` (the host otherwise lets a newly created agent hire agents, which also makes it a task assigner).
+- Managed-agent reconcile does **not** update an agent that already exists. For agents created before this change, a board user runs once per agent:
+  `PATCH /api/agents/:agentId/permissions` `{ "canCreateAgents": false, "canCreateSkills": false, "canAssignTasks": false }`
+  (`pluginTools` is kept; the devkit `seed` script does this automatically for the demo company.)
+- Known limit (Paperclip core, not changed by Starnet): every active company member can still assign tasks (`access.taskAssignSource: "simple_default"`). Turning that off needs a core change, so it is only an upstream proposal.
+
+## Routine timing (ops note)
+
+- The heartbeat scheduler checks routines every 30 s (`HEARTBEAT_SCHEDULER_INTERVAL_MS`, default 30000). A routine can therefore start up to ~30 s after its cron minute. This is normal.
+- If the host is asleep or paused, nothing runs. With `catchUpPolicy: "skip_missed"` a missed slot fires **once** when the host wakes up; older slots are skipped. This is intended. (The 27 Sep 2026 "late run" on the dev box was the box being paused from about 03:06 to 07:51 WIB, not a scheduler bug.)
+- Production must run on an always-on server.
+- Measured on the dev box (devkit E2E): manual run → run started p95 ≈ 0.1 s.
+
 ## Risk classification and future write tools
 
 The gateway infers risk **from the tool name only** (`inferToolRisk` in `server/src/services/tool-gateway.ts`). Plugins have no explicit `risk` field yet.
