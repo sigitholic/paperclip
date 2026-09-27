@@ -1,6 +1,6 @@
 # Starnet patches to Paperclip core
 
-This fork (`sigitholic/paperclip`, branch `starnet/main`) does **not** edit Paperclip core. Hard rule (Sigit, 27 Sep 2026): Starnet work only **adds new files** in Starnet-owned places (`packages/plugins/starnet-*`, `packages/adapters/starnet-*`, `packages/starnet-*`, `.github/workflows/starnet-*.yml`, this file) plus `pnpm-lock.yaml` entries for our packages. No existing upstream file is edited (including upstream workflows). The only exception is the streaming patch P-0 below; no other core patch may be added.
+This fork (`sigitholic/paperclip`, branch `starnet/main`) does **not** edit Paperclip core. Hard rule (Sigit, 27 Sep 2026): Starnet work only **adds new files** in Starnet-owned places (`packages/plugins/starnet-*`, `packages/adapters/starnet-*`, `packages/starnet-*`, `.github/workflows/starnet-*.yml`, `.github/README.md` (the Starnet README shown on the repo home page), this file) plus `pnpm-lock.yaml` entries for our packages. No existing upstream file is edited (including upstream workflows). The only exception is the streaming patch P-0 below; no other core patch may be added.
 
 Enforced by `node packages/starnet-devkit/scripts/core-diff-check.mjs [--against upstream/master]` (CI and the weekly sync): it fails if any file outside the Starnet-owned paths differs from upstream, except the four P-0 files.
 
