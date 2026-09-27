@@ -62,6 +62,14 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
   const routineId = setup.routine?.routineId ?? setup.routine?.routine?.id ?? null;
   if (!agentId) throw new Error(`setup did not return the NOC agent: ${JSON.stringify(setup).slice(0, 200)}`);
 
+  // 3b. Least privilege (board step): the NOC agent must not hire agents, create skills or
+  // assign tasks. Managed-agent reconcile does not update existing agents, so enforce it here.
+  const nocPerms = (await api.get(`/agents/${agentId}`)).permissions ?? {};
+  if (nocPerms.canCreateAgents !== false || nocPerms.canCreateSkills !== false) {
+    await api.patch(`/agents/${agentId}/permissions`, { canCreateAgents: false, canCreateSkills: false, canAssignTasks: false });
+    log("NOC agent permissions reduced (no hiring, no skills, no task-assign grant)");
+  }
+
   // 4. Board step: deny-by-default tool profile with the four read-only tools, bound to NOC.
   const profiles = await api.get(`/companies/${companyId}/tools/profiles`);
   let profile = (Array.isArray(profiles) ? profiles : profiles.profiles ?? []).find((p) => p.profileKey === PROFILE_KEY);
