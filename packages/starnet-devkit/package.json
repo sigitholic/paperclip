@@ -5,9 +5,9 @@
   "private": true,
   "description": "Starnet developer kit: patch bookkeeping checks, upstream sync, demo seed, fake device servers and E2E against a local Paperclip instance.",
   "scripts": {
-    "check:patches": "node ./scripts/check-patch-markers.mjs",
-    "typecheck": "node --check ./scripts/check-patch-markers.mjs",
-    "test": "node ./scripts/check-patch-markers.mjs",
+    "check:patches": "node ./scripts/patch-markers.mjs",
+    "typecheck": "node --check ./scripts/patch-markers.mjs",
+    "test": "node ./scripts/patch-markers.mjs",
     "build": "node -e \"\""
   },
   "license": "MIT",

@@ -70,4 +70,4 @@ jobs:
         run: npx vitest run src/__tests__/plugin-stream-bridge.test.ts src/__tests__/plugin-routes-authz.test.ts
 
       - name: STARNET-PATCH markers match STARNET_PATCHES.md
-        run: node packages/starnet-devkit/scripts/check-patch-markers.mjs
+        run: node packages/starnet-devkit/scripts/patch-markers.mjs
