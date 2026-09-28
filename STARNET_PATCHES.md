@@ -20,6 +20,7 @@ Core patch P-0 (listed as #1 before the plan numbering) arrived with `starnet/pl
 4. **Result redaction noise.** The gateway's sensitive-content validator redacted CPE `firmware` version strings in the audit result summary. A per-tool allowlist or a clearer heuristic would help ops data.
 5. **Plugin stream bridge not wired.** Now patched locally as core patch P-0 (above); the upstream proposal is drafted in the fork branch `upstream-prop/plugin-stream`. Related, not patched: core emits `agent.run.*` before the agent status flips back to idle and emits no event for the flip, so live UIs need a short re-read (Virtual Office re-announces at +1.5 s/+5 s).
 6. **Plugin-created issues are not auto-woken.** `ctx.issues.create` with an assignee does not queue the assignment wake that the REST route does, so plugins must call `ctx.issues.requestWakeup`. This works, but it is inconsistent and undocumented.
+7. **Local-path plugin workers crash on Windows.** `server/src/services/plugin-loader.ts` forks repo-local plugin workers with `execArgv: ["--import", DEV_TSX_LOADER_PATH]`, a raw absolute path. On Windows Node rejects it (`ERR_UNSUPPORTED_ESM_URL_SCHEME`, "Received protocol 'e:'"), so every local plugin install fails. Fix: pass `pathToFileURL(DEV_TSX_LOADER_PATH).href`. Not a fork patch: Windows is unsupported here (use WSL2), so only apply it as an uncommitted local change when running natively on Windows.
 
 ## Fork CI and GitHub settings (no upstream files edited)
 

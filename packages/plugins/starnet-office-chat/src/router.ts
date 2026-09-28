@@ -5,7 +5,7 @@
  * `createOfficeChat`/the worker instead of `keywordRouter`. The rest of the flow
  * (issue creation, assignment, wake, reply relay) does not change.
  */
-export interface RoutableAgent { id: string; name: string; title?: string | null; role?: string | null; capabilities?: string | null }
+export interface RoutableAgent { id: string; name: string; title?: string | null; role?: string | null; capabilities?: string | null; adapterType?: string | null }
 export type RouteDecision =
   | { kind: "task"; agentId: string; title: string; reason: string }
   | { kind: "reply"; text: string };
@@ -19,7 +19,24 @@ export const RULES: Array<{ agent: RegExp; keywords: string[] }> = [
 ];
 
 const REQUEST_VERBS = /^(tolong|mohon|please|cek|check|periksa|lihat|buat|buatkan|bikin|kirim|jalankan|run|restart|cari|laporkan|report|summarize|ringkas|analisa|analisis)\b/i;
+const FILLERS = /^((oke|ok|okay|okey|baik|sip|bro|mas|pak|bu|kak|halo|hai|hi|eh|nah|jadi|terus|lalu)[\s,.!]+)+/i;
+const GREETING = /^(selamat\s+(pagi|siang|sore|malam)|halo|hai|hi|hello|pagi|siang|sore|malam|terima\s*kasih|makasih|thanks|thank\s+you|assalamu.?alaikum)\b[\s\w,.!?]{0,24}$/i;
 const words = (s: string) => s.toLowerCase().normalize("NFKD").match(/[a-z0-9]+/g) ?? [];
+
+/** Conversational openers ("oke", "bro", "halo,") hide the request verb; strip them before matching. */
+export const stripFillers = (text: string) => text.trim().replace(FILLERS, "");
+export const isGreeting = (text: string) => GREETING.test(text.trim());
+
+/**
+ * The agent that receives free-form chat that no rule matches: the company's CEO/chief, else the
+ * first agent backed by an LLM adapter. `process` agents run fixed scripts and cannot converse.
+ */
+export function pickDefaultAgent(agents: RoutableAgent[]): RoutableAgent | undefined {
+  const llm = agents.filter((a) => a.adapterType && a.adapterType !== "process" && a.adapterType !== "http");
+  return llm.find((a) => a.role === "ceo")
+    ?? llm.find((a) => /kepala|chief|manager|ceo/i.test(`${a.name} ${a.title ?? ""}`))
+    ?? llm[0];
+}
 
 function agentText(a: RoutableAgent) {
   return [a.name, a.title, a.role, a.capabilities].filter(Boolean).join(" ");
@@ -52,10 +69,20 @@ export const keywordRouter: ChatRouter = async ({ text, agents }) => {
     for (const w of words(agentText(agent))) if (w.length >= 5 && tokens.has(w)) hits.add(w);
     if (hits.size && (!best || hits.size > best.score)) best = { agent, score: hits.size, hits: [...hits] };
   }
-  if (best) return { kind: "task", agentId: best.agent.id, title: titleFrom(text), reason: `kata kunci: ${best.hits.slice(0, 4).join(", ")}` };
+  const request = stripFillers(text) || text.trim();
+  if (best) return { kind: "task", agentId: best.agent.id, title: titleFrom(request), reason: `kata kunci: ${best.hits.slice(0, 4).join(", ")}` };
 
-  if (REQUEST_VERBS.test(text.trim())) {
-    return { kind: "reply", text: "Saya belum tahu agen mana yang cocok untuk permintaan ini. Sebut agennya dengan @Nama, atau pakai kata kunci yang lebih spesifik." };
+  const roster = agents.length ? `Agen yang aktif: ${agents.map((a) => a.name).join(", ")}.` : "Belum ada agen aktif di kantor ini.";
+  if (isGreeting(text)) {
+    return { kind: "reply", text: `Halo! ${roster} Tulis permintaan Anda, atau sebut agennya dengan @Nama.` };
   }
-  return { kind: "reply", text: "Dicatat. Kalau ini permintaan kerja, awali dengan kata kerja (mis. \"cek …\", \"tolong …\") atau sebut agennya dengan @Nama." };
+
+  // 4. Anything else goes to the default (LLM) agent, so the chat always reaches someone who can think.
+  const fallback = pickDefaultAgent(agents);
+  if (fallback) return { kind: "task", agentId: fallback.id, title: titleFrom(request), reason: "agen default untuk pesan umum" };
+
+  if (REQUEST_VERBS.test(request)) {
+    return { kind: "reply", text: `Saya belum tahu agen mana yang cocok untuk permintaan ini. ${roster} Sebut agennya dengan @Nama, atau pakai kata kunci yang lebih spesifik.` };
+  }
+  return { kind: "reply", text: `Belum ada agen berbasis LLM untuk pesan umum. ${roster} Awali permintaan dengan kata kerja (mis. "cek …", "tolong …") atau sebut agennya dengan @Nama.` };
 };

@@ -24,6 +24,12 @@ describe("thread mapping (pure)", () => {
     const t2 = syncIssue(t1, "iss-1", { status: "done" }, [{ id: "c1", body: "hasil", authorAgentId: "noc", createdAt: "2000-01-01T00:00:00.000Z" }], id);
     expect(t2.messages.map((m) => m.role)).toEqual(["agent", "office"]);
   });
+  it("moves an earlier status note after a reply that arrives later with a newer timestamp", () => {
+    const t1 = syncIssue(base(), "iss-1", { status: "done" }, [], id);
+    const future = new Date(Date.now() + 5000).toISOString();
+    const t2 = syncIssue(t1, "iss-1", { status: "done" }, [{ id: "c1", body: "hasil", authorAgentId: "noc", createdAt: future }], id);
+    expect(t2.messages.map((m) => [m.role, m.text])).toEqual([["agent", "hasil"], ["office", "STA-10 selesai ✅"]]);
+  });
   it("ignores issues that did not come from the chat", () => {
     const t = base();
     expect(syncIssue(t, "other", { status: "done" }, [{ id: "x", body: "hi", authorAgentId: "noc" }], id)).toBe(t);

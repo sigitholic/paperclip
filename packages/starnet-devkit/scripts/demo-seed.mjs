@@ -8,7 +8,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { client } from "../lib/api.mjs";
 import { readState, STATE_FILE, writeState } from "../lib/state.mjs";
 
@@ -118,7 +118,7 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
   return state;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const mode = process.argv.includes("--live") ? "live" : process.argv.includes("--mock") ? "mock" : undefined;
   seedDemo({ companyName: arg("--company", "Starnet Demo"), mode }).catch((err) => { console.error(`demo-seed failed: ${err.message}`); process.exit(1); });
 }

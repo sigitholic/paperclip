@@ -12,7 +12,7 @@ It is built from Paperclip primitives only. There is no parallel task system and
 | Status | `issue.updated` → "STA-14 selesai ✅" |
 
 - **Role isolation.** The issue description contains only that one request (`taskBrief`). The agent never sees the chat transcript or other agents' tasks.
-- **Routing.** `src/router.ts` handles routing: an `@Name` mention, then domain keyword rules (NOC, finance, support), then word overlap with the agent's own name, title and capabilities. Anything else gets a reply and **no** issue is created.
+- **Routing.** `src/router.ts` handles routing: an `@Name` mention, then domain keyword rules (NOC, finance, support), then word overlap with the agent's own name, title and capabilities. Greetings get a direct reply listing the active agents and create **no** issue. Any other message goes to the **default agent**: the company's `ceo`, else an agent titled kepala/chief/manager, else the first LLM-backed agent (`process` agents are never picked). With no LLM agent, the chat replies without creating an issue. Conversational openers ("oke", "bro", "halo,") are stripped before matching.
   - **LLM hook:** implement `ChatRouter` (same input and output) and call `createOfficeChat(myLlmRouter)` in `worker.ts`.
 - **State.** The thread lives in plugin state (company scope, key `thread`, last 300 messages). Updates are serialized per company with `serialByKey` from `@starnet/pack-kit`.
 - **UI.** `usePluginData("thread")` + `usePluginAction("send")`.
