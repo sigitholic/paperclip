@@ -8,7 +8,7 @@
 # also how you update (git pull + install + build). Windows PowerShell 5.1 compatible, ASCII-only.
 param(
   [string]$InstallDir = $env:STARNET_DIR,
-  [switch]$NoStart
+  [switch]$NoStart = ($env:STARNET_NO_START -eq "1")
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,8 +18,22 @@ $Branch = "starnet/main"
 
 function Write-Boot([string]$Text) { Write-Host ""; Write-Host "==> $Text" -ForegroundColor Cyan }
 
+# Standard install folders of the tools this installer needs. They are added to PATH when present,
+# because Git installed as "Git Bash only" or per-user, or a fresh winget install, is often not on PATH.
+function Get-KnownToolDirs {
+  $dirs = @(
+    "$env:ProgramFiles\Git\cmd",
+    "${env:ProgramFiles(x86)}\Git\cmd",
+    "$env:LOCALAPPDATA\Programs\Git\cmd",
+    "$env:ProgramFiles\nodejs",
+    "$HOME\.cargo\bin",
+    "$env:ProgramFiles\Docker\Docker\resources\bin"
+  )
+  return @($dirs | Where-Object { $_ -notmatch "^\\" -and (Test-Path $_) })
+}
+
 function Refresh-BootPath {
-  $env:Path = ([Environment]::GetEnvironmentVariable("Path", "Machine"), [Environment]::GetEnvironmentVariable("Path", "User") | Where-Object { $_ }) -join ";"
+  $env:Path = (@(Get-KnownToolDirs) + @([Environment]::GetEnvironmentVariable("Path", "Machine"), [Environment]::GetEnvironmentVariable("Path", "User")) | Where-Object { $_ }) -join ";"
 }
 
 function Install-WingetPackage([string]$Id, [string]$Label, [string[]]$Extra = @()) {
@@ -28,7 +42,7 @@ function Install-WingetPackage([string]$Id, [string]$Label, [string[]]$Extra = @
   }
   Write-Host "    ..  Menginstall $Label (winget $Id). Klik 'Yes' kalau Windows meminta izin." -ForegroundColor Gray
   $ErrorActionPreference = "Continue"
-  & winget install --id $Id -e --source winget --accept-source-agreements --accept-package-agreements @Extra
+  & winget install --id $Id -e --source winget --no-upgrade --accept-source-agreements --accept-package-agreements @Extra
   Refresh-BootPath
 }
 
@@ -68,12 +82,16 @@ function Sync-Repo([string]$Dir) {
 Write-Boot "Starnet Office installer"
 Refresh-BootPath
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Install-WingetPackage "Git.Git" "Git for Windows" }
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "Git belum terbaca. Tutup jendela ini, buka PowerShell baru, lalu jalankan installer lagi." }
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+  throw "Git tidak ditemukan. Install Git for Windows dari https://git-scm.com/download/win (pilih opsi 'Git from the command line and also from 3rd-party software'), buka PowerShell baru, lalu jalankan installer lagi."
+}
+Write-Host "    OK  $((& git --version) -join '')" -ForegroundColor Green
 
 $RepoDir = Resolve-RepoDir
 Write-Boot "Kode Starnet di $RepoDir"
 Sync-Repo $RepoDir
-. (Join-Path $RepoDir "packages\starnet-installer\lib.ps1")
+# Loaded as text: the default execution policy blocks dot-sourcing .ps1 files when this script runs via iex.
+. ([scriptblock]::Create([IO.File]::ReadAllText((Join-Path $RepoDir "packages\starnet-installer\lib.ps1"))))
 New-Item -ItemType Directory -Force -Path $StarnetHome, $StarnetBin | Out-Null
 
 # --- 2. Prerequisites ---------------------------------------------------------------------------
@@ -229,5 +247,5 @@ Write-Host "Menyalakan Starnet: dobel-klik 'Starnet Office' di desktop (atau jal
 Write-Host "Start pertama butuh 5-10 menit (compile Rust + build). Browser terbuka otomatis saat siap."
 if (-not $NoStart) {
   $answer = Read-Host "Nyalakan sekarang? (Y/n)"
-  if ($answer -notmatch "^[nN]") { & (Join-Path $RepoDir "packages\starnet-installer\start.ps1") }
+  if ($answer -notmatch "^[nN]") { Start-Process -FilePath $startCmd -WorkingDirectory $RepoDir }
 }

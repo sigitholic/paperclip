@@ -28,7 +28,15 @@ function Test-Command([string]$Name) {
 function Update-SessionPath {
   $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
   $user = [Environment]::GetEnvironmentVariable("Path", "User")
-  $extra = @($script:StarnetBin, (Join-Path $HOME ".cargo\bin"))
+  $extra = @(
+    $script:StarnetBin,
+    "$HOME\.cargo\bin",
+    "$env:ProgramFiles\Git\cmd",
+    "${env:ProgramFiles(x86)}\Git\cmd",
+    "$env:LOCALAPPDATA\Programs\Git\cmd",
+    "$env:ProgramFiles\nodejs",
+    "$env:ProgramFiles\Docker\Docker\resources\bin"
+  ) | Where-Object { $_ -notmatch "^\\" -and (Test-Path $_) }
   $env:Path = (@($extra) + @($machine, $user) | Where-Object { $_ }) -join ";"
 }
 
@@ -37,6 +45,7 @@ function Get-GitBash {
   $candidates = @()
   if ($git) { $candidates += (Join-Path (Split-Path (Split-Path $git.Source)) "bin\bash.exe") }
   $candidates += (Join-Path $env:ProgramFiles "Git\bin\bash.exe")
+  $candidates += (Join-Path $env:LOCALAPPDATA "Programs\Git\bin\bash.exe")
   foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
   return $null
 }
