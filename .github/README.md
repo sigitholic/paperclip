@@ -22,6 +22,7 @@ Branch utama fork: **`starnet/main`** (default branch). Kerja baru lewat PR ke b
 | `packages/plugins/starnet-pack-isp/` | Starnet | Plugin ISP: 5 tool read-only (`mikrotik.list_routers`, `mikrotik.list_pppoe_active`, `mikrotik.system_resource`, `genieacs.list_devices`, `genieacs.device_status`), multi-MikroTik (REST atau RouterOS API 8728/8729), agent NOC Engineer (adapter `process`) dan NOC Engineer (LLM), routine harian 07:00 WIB, widget dashboard. [README](../packages/plugins/starnet-pack-isp/README.md) |
 | `packages/plugins/starnet-office-chat/` | Starnet | Halaman Office Chat. [README](../packages/plugins/starnet-office-chat/README.md) |
 | `packages/plugins/starnet-virtual-office/` | Starnet | Halaman Virtual Office + widget. [README](../packages/plugins/starnet-virtual-office/README.md) |
+| `packages/plugins/starnet-office-templates/` | Starnet | Halaman Install Office: pasang Network/ISP, Software, Marketing, atau Finance Office sekali klik lewat API import core (agent dijeda, tanpa izin tool). [README](../packages/plugins/starnet-office-templates/README.md) |
 | `packages/plugins/starnet-pack-nms/` | Starnet | Plugin NMS: 3 tool read-only (`nms.list_sources`, `nms.list_problems`, `nms.host_status`) untuk Zabbix + LibreNMS, webhook alert → issue NOC, widget dashboard. [README](../packages/plugins/starnet-pack-nms/README.md) |
 | `packages/plugins/starnet-pack-kit/` | Starnet | Helper bersama untuk pack Starnet (`fetchJson`, `tierTemplate`, `qualifyTool`). |
 | `packages/starnet-installer/` | Starnet | Installer Windows satu langkah (`install.ps1`/`install.cmd`) dan launcher harian (`start.ps1`/`start.cmd`). Lihat [Install cepat (Windows)](#install-cepat-windows). |
@@ -46,7 +47,10 @@ adalah patch core **P-0** (bridge stream plugin, 4 file di `server/`) yang dicat
 - **Pack NMS (Zabbix + LibreNMS) — selesai:** `packages/plugins/starnet-pack-nms`, 3 tool read-only, webhook alert.
 - **Pack ISP — ditambah:** multi-MikroTik, RouterOS API transport (8728/8729), UI compact.
 - **Phase 2 — selesai:** NOC Engineer (LLM) menjawab lewat tool gateway, dengan context pack Starnet Memory di setiap run, batas tool call/token per run, QA gate (issue baru `done` setelah disetujui agent QA NOC), dan sandbox Codex `workspace-write` (shell hanya boleh menulis di workspace; jaringan shell hanya ke API Paperclip). Isolasi baca menunggu dukungan environment core untuk adapter eksternal.
-- **Phase 4–6 — rencana:** pack OLT/billing + write tool di balik approval, agent factory/template, multi-tenant.
+- **Phase 5 (template office) — selesai:** plugin `starnet.office-templates`, halaman **Install Office** dengan 4
+  template (Network/ISP, Software, Marketing, Finance). Agent masuk dalam status dijeda dan tanpa izin tool; board yang
+  memberi izin dan menyalakannya.
+- **Phase 4 dan 6 — rencana:** pack OLT/billing + write tool di balik approval, multi-tenant.
 
 Daftar patch core dan usulan PR upstream: [`STARNET_PATCHES.md`](../STARNET_PATCHES.md).
 Riwayat per langkah: [PR yang sudah di-merge](https://github.com/sigitholic/paperclip/pulls?q=is%3Apr+is%3Amerged+base%3Astarnet%2Fmain).
@@ -227,6 +231,7 @@ Mau melakukannya manual (tanpa seed)? Install plugin dengan CLI, lalu ikuti lang
 pnpm paperclipai plugin install ./packages/plugins/starnet-pack-isp
 pnpm paperclipai plugin install ./packages/plugins/starnet-office-chat
 pnpm paperclipai plugin install ./packages/plugins/starnet-virtual-office
+pnpm paperclipai plugin install ./packages/plugins/starnet-office-templates
 ```
 
 ## Coba Office Chat dan Virtual Office

@@ -17,7 +17,7 @@ Paperclip yang sudah ditemui; perlu disetujui sebelum dikerjakan.
 | 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | ✅ Selesai (isolasi baca menunggu core): NOC Engineer (LLM) menjawab lewat tool gateway (STAA-35); konteks tersuntik ✅ (STAA-52); batas langkah/token ✅ (STAA-53); QA gate ✅ (STAA-55); sandbox ✅ (STAA-57, tulis + jaringan) |
 | 3 | Tier model per agent (dilebur ke Fase 2) | ✅ Peta tier, skrip validasi, template bertier, `apply-tier` |
 | 4 | Pack OLT/billing + tool tulis di balik approval | ⬜ Rencana |
-| 5 | Agent factory / template office | ⬜ Rencana |
+| 5 | Agent factory / template office | ✅ Template office sekali klik (4 office, lewat API import core). Draf roster dari prompt (ADR-003) belum |
 | 6 | Multi-tenant | ⬜ Rencana (sebagian besar sudah core) |
 
 ## Fase 0 — Fondasi ✅
@@ -315,13 +315,37 @@ Cakupan usulan:
 3. Default untuk perangkat live: selalu minta approval (ADR-011: kritis tetap "always").
 4. Pack billing mengikuti setelah pola tulis terbukti aman.
 
-## Fase 5 — Agent factory / template office (usulan)
+## Fase 5 — Agent factory / template office
 
 **Tujuan:** "Install office" (Network/ISP, Software, Marketing, Finance) tanpa prompt engineering (ADR-007), dan draf
 roster dari prompt (ADR-003) yang tetap tidak memberi izin tool.
 
-Arah: gunakan teams catalog core (`@paperclipai/teams-catalog`) dan skill `company-creator` sebagai dasar, bukan
-katalog sendiri. Pack Starnet menyediakan agent, routine, dan usulan tool profile; board tetap yang memberi izin.
+### 5.1 Template office ✅ (2 Okt 2026)
+
+Plugin `starnet.office-templates`, halaman **Install Office** di sidebar. Detail di
+[README plugin](../plugins/starnet-office-templates/README.md).
+
+Kenapa API import (`/imports/preview` + `/imports/apply`) dan bukan teams catalog core:
+
+- Katalog core hanya bisa diganti seluruhnya lewat `PAPERCLIP_TEAMS_CATALOG_DIR`. Plugin tidak bisa menambah team ke
+  katalog itu.
+- Install lewat katalog memaksa adapter default (`claude_local`), sedangkan import menghormati adapter yang dipilih.
+  Ini penting untuk `starnet_9router` dan `codex_local`.
+- Halaman katalog core belum dipasang di navigasi UI.
+- Managed agent plugin SDK tidak punya `reportsTo`, jadi org chart tidak bisa dibentuk.
+
+Format paketnya tetap `agentcompanies/v1` yang sama dengan katalog. Template bisa dipindah ke teams catalog bila
+keterbatasan di atas hilang di upstream.
+
+| Hasil | Bukti |
+|---|---|
+| 4 office: kepala + anggota, project, routine terjadwal WIB | Uji langsung ke API import di company sementara: 17 agent dibuat, 0 warning, 0 error; company dihapus setelahnya |
+| Draf, bukan izin: agent dan routine **dijeda**, `canCreateAgents/canCreateSkills: false`, tanpa tool profile, heartbeat timer mati | Uji langsung: status `paused`, routine `paused` dengan trigger `0 8 * * 1 Asia/Jakarta` dst. |
+| Kepala office melapor ke agent yang dipilih (default CEO), anggota ke kepala | Uji langsung: NOC Manager → Boss (ceo), 3 anggota → NOC Manager |
+| Pasang ulang tidak menggandakan (`collisionStrategy: skip`) | Uji langsung: apply kedua → semua `skipped`, jumlah agent tetap |
+| Mesin AI disalin dari agent pilihan; secret ref tetap, nilai yang disensor host dibuang dan dilaporkan | 11 unit test; pratinjau di UI Starnet Demo memakai NOC Engineer (LLM) |
+
+Belum: draf roster dari prompt (ADR-003), dan usulan tool profile per office (sekarang board memberi izin manual).
 
 ## Fase 6 — Multi-tenant
 
@@ -341,7 +365,7 @@ core, dan jangan bersaing dengan fitur yang sedang direncanakan upstream.
 | CEO Chat: ngobrol dengan agent pimpinan, tapi hasilnya tetap plan/issue/approval | Office Chat (pesan bebas ke agent `ceo`) | Desain sudah sejalan (chat menghasilkan issue). Kalau upstream merilis CEO Chat, Office Chat dipersempit menjadi lapisan routing domain ISP di atasnya, bukan chat kedua |
 | Memory / Knowledge | Fase 1 Starnet Memory, pertanyaan terbuka #1 (RAG/SOP) | Plugin tetap tipis (admission, context pack hemat token). Kalau memory core muncul, plugin menjadi penyedia isi, bukan penyimpanan kedua |
 | Work Queues (support, triage, intake) | Alert NOC dan keluhan pelanggan (belum ada) | Jangan bangun antrian sendiri; tunggu atau ikuti upstream |
-| Self-Organization | Fase 5 Agent factory | Sudah memakai teams catalog core. Ikuti fitur ini untuk usulan perubahan struktur |
+| Self-Organization | Fase 5 Agent factory | Template office memakai format `agentcompanies/v1` dan API import core (bukan katalog sendiri). Ikuti fitur ini untuk usulan perubahan struktur |
 | Connected Apps | Integrasi perangkat di pack-isp | Integrasi perangkat ISP tetap di pack; integrasi SaaS umum ikut Connected Apps |
 
 **Fitur upstream yang sudah selesai (✅) dan dipakai Starnet:** plugin system (dasar semua paket Starnet), MCP Tool

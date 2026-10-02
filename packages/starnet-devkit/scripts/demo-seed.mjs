@@ -20,6 +20,7 @@ export const PLUGINS = {
   "starnet.virtual-office": "packages/plugins/starnet-virtual-office",
   "starnet.memory": "packages/plugins/starnet-memory",
   "starnet.pack-nms": "packages/plugins/starnet-pack-nms",
+  "starnet.office-templates": "packages/plugins/starnet-office-templates",
 };
 export const ISP_TOOLS = [
   "mikrotik.list_routers",
