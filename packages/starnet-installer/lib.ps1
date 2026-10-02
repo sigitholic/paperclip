@@ -70,9 +70,7 @@ function Get-DockerDesktopExe {
 # terminating error, so functions that call them use "Continue" and check $LASTEXITCODE.
 
 function Test-DockerEngine {
-  $ErrorActionPreference = "Continue"
-  & docker info *> $null
-  return ($LASTEXITCODE -eq 0)
+  return ((Invoke-DockerQuick @("info") 20).Code -eq 0)
 }
 
 function Start-DockerEngine([int]$TimeoutSec = 240) {
@@ -94,28 +92,69 @@ function Start-DockerEngine([int]$TimeoutSec = 240) {
   Stop-Starnet "Docker Desktop belum siap setelah $TimeoutSec detik. Buka Docker Desktop, tunggu sampai statusnya 'running', lalu coba lagi."
 }
 
-function Start-StarnetPostgres([int]$TimeoutSec = 90) {
+# Docker CLI calls can hang forever while Docker Desktop is half-started (WSL boot, Resource Saver,
+# first-run license dialog), so short calls get a hard timeout. Code -1 means timed out.
+function Invoke-DockerQuick([string[]]$DockerArgs, [int]$TimeoutSec = 30) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = (Get-Command docker -CommandType Application | Select-Object -First 1).Source
+  $psi.Arguments = ($DockerArgs | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " "
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $p = [System.Diagnostics.Process]::Start($psi)
+  $out = $p.StandardOutput.ReadToEndAsync()
+  $err = $p.StandardError.ReadToEndAsync()
+  if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+    try { & taskkill /PID $p.Id /T /F *> $null } catch { }
+    return @{ Code = -1; Out = ""; Err = "" }
+  }
+  $p.WaitForExit()
+  return @{ Code = $p.ExitCode; Out = $out.Result.Trim(); Err = $err.Result.Trim() }
+}
+
+function Stop-DockerUnresponsive {
+  Stop-Starnet "Docker tidak merespons. Buka Docker Desktop: setujui lisensi/login kalau diminta, tunggu sampai di pojok kiri bawah tertulis 'Engine running' (bukan 'Resource Saver'), lalu jalankan installer lagi."
+}
+
+function Start-StarnetPostgres([int]$TimeoutSec = 120) {
   $ErrorActionPreference = "Continue"
   $name = $script:PostgresContainer
-  $exists = (& docker ps -a --filter "name=^$name$" --format "{{.Names}}") -eq $name
-  if (-not $exists) {
+  $image = "postgres:17-alpine"
+  Write-Note "Cek container database..."
+  $ps = Invoke-DockerQuick @("ps", "-a", "--filter", "name=^$name$", "--format", "{{.Names}}")
+  if ($ps.Code -eq -1) { Stop-DockerUnresponsive }
+  if ($ps.Out -ne $name) {
+    $img = Invoke-DockerQuick @("image", "inspect", $image)
+    if ($img.Code -eq -1) { Stop-DockerUnresponsive }
+    if ($img.Code -ne 0) {
+      Write-Note "Mengunduh image Postgres (~110 MB, sekali saja; tergantung kecepatan internet)..."
+      & docker pull $image
+      if ($LASTEXITCODE -ne 0) { Stop-Starnet "Gagal mengunduh image $image. Cek koneksi internet lalu jalankan installer lagi." }
+    }
     Write-Note "Membuat database Postgres ($name, port $($script:PostgresPort))..."
-    & docker run -d --name $name --restart unless-stopped `
-      -e POSTGRES_USER=paperclip -e POSTGRES_PASSWORD=paperclip -e POSTGRES_DB=paperclip `
-      -p "127.0.0.1:$($script:PostgresPort):5432" -v "$($script:PostgresVolume):/var/lib/postgresql/data" `
-      postgres:17-alpine | Out-Null
-    if ($LASTEXITCODE -ne 0) { Stop-Starnet "docker run Postgres gagal (port $($script:PostgresPort) mungkin dipakai program lain)." }
+    $run = Invoke-DockerQuick @("run", "-d", "--name", $name, "--restart", "unless-stopped",
+      "-e", "POSTGRES_USER=paperclip", "-e", "POSTGRES_PASSWORD=paperclip", "-e", "POSTGRES_DB=paperclip",
+      "-p", "127.0.0.1:$($script:PostgresPort):5432", "-v", "$($script:PostgresVolume):/var/lib/postgresql/data",
+      $image) 120
+    if ($run.Code -eq -1) { Stop-DockerUnresponsive }
+    if ($run.Code -ne 0) { Stop-Starnet "docker run Postgres gagal: $($run.Err) (port $($script:PostgresPort) mungkin dipakai program lain)." }
   } else {
-    $running = (& docker inspect -f "{{.State.Running}}" $name) -eq "true"
-    if (-not $running) {
-      & docker start $name | Out-Null
-      if ($LASTEXITCODE -ne 0) { Stop-Starnet "Container $name tidak bisa dinyalakan." }
+    $state = Invoke-DockerQuick @("inspect", "-f", "{{.State.Running}}", $name)
+    if ($state.Code -eq -1) { Stop-DockerUnresponsive }
+    if ($state.Out -ne "true") {
+      Write-Note "Menyalakan container $name..."
+      $start = Invoke-DockerQuick @("start", $name) 60
+      if ($start.Code -ne 0) { Stop-Starnet "Container $name tidak bisa dinyalakan: $($start.Err)" }
     }
   }
-  $deadline = (Get-Date).AddSeconds($TimeoutSec)
-  while ((Get-Date) -lt $deadline) {
-    & docker exec $name pg_isready -U paperclip -d paperclip *> $null
-    if ($LASTEXITCODE -eq 0) { Write-Ok "Postgres siap di 127.0.0.1:$($script:PostgresPort)"; return }
+  $begin = Get-Date
+  $lastNote = 0
+  while (((Get-Date) - $begin).TotalSeconds -lt $TimeoutSec) {
+    $ready = Invoke-DockerQuick @("exec", $name, "pg_isready", "-U", "paperclip", "-d", "paperclip") 15
+    if ($ready.Code -eq 0) { Write-Ok "Postgres siap di 127.0.0.1:$($script:PostgresPort)"; return }
+    $elapsed = [int]((Get-Date) - $begin).TotalSeconds
+    if ($elapsed - $lastNote -ge 15) { Write-Note "Menunggu Postgres siap... ($elapsed detik)"; $lastNote = $elapsed }
     Start-Sleep -Seconds 2
   }
   Stop-Starnet "Postgres belum siap setelah $TimeoutSec detik. Cek: docker logs $name"
