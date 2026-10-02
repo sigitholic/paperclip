@@ -170,6 +170,7 @@ try {
 # --- 3. Database --------------------------------------------------------------------------------
 Write-Step "Database Postgres (Docker)"
 Start-StarnetPostgres
+Repair-StarnetDatabaseLogin
 
 # --- 4. Dependencies and build ------------------------------------------------------------------
 Write-Step "pnpm (lewat Corepack)"
@@ -252,6 +253,7 @@ try {
     if (-not (Test-Onboarded)) { Stop-Starnet "Onboard tidak selesai. Lihat log: $log" }
     Write-Ok "Config dan secret instance dibuat di $InstanceDir"
   }
+  Sync-InstanceDatabaseUrl
 } finally {
   Pop-Location
 }

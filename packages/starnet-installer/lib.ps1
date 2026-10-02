@@ -160,6 +160,44 @@ function Start-StarnetPostgres([int]$TimeoutSec = 120) {
   Stop-Starnet "Postgres belum siap setelah $TimeoutSec detik. Cek: docker logs $name"
 }
 
+# POSTGRES_PASSWORD only applies when the volume is first initialised, so a container or volume left over from an
+# earlier manual attempt keeps its old password. Inside the container the unix socket is trusted, which lets us reset it.
+function Test-StarnetPasswordLogin([string]$Name) {
+  # The image trusts 127.0.0.1 without a password; the container's own network address goes through password auth,
+  # like the server's connection from Windows does.
+  return Invoke-DockerQuick @("exec", "-e", "PGPASSWORD=paperclip", $Name, "sh", "-c",
+    'psql -h "$(hostname -i | cut -d" " -f1)" -U paperclip -d paperclip -tAc "select 1"') 20
+}
+
+function Repair-StarnetDatabaseLogin {
+  $name = $script:PostgresContainer
+  $login = Test-StarnetPasswordLogin $name
+  if ($login.Code -eq 0) { Write-Ok "Login database cocok"; return }
+  Write-Warn "Password database tidak cocok (container/volume dari percobaan lama). Menyetel ulang password user paperclip..."
+  $reset = Invoke-DockerQuick @("exec", $name, "psql", "-U", "paperclip", "-d", "postgres", "-tAc", "ALTER USER paperclip WITH PASSWORD 'paperclip'") 20
+  $login = Test-StarnetPasswordLogin $name
+  if ($reset.Code -eq 0 -and $login.Code -eq 0) { Write-Ok "Password database disetel ulang"; return }
+  Stop-Starnet ("Database di container $name tidak bisa dipakai (user/database 'paperclip' tidak ada atau password tidak bisa disetel: " +
+    "$($reset.Err) $($login.Err)). Kalau isinya tidak penting, hapus lalu jalankan installer lagi: " +
+    "docker rm -f $name; docker volume rm $($script:PostgresVolume)")
+}
+
+# The server reads the database from the instance config, not from DATABASE_URL, so an old onboard that pointed
+# elsewhere keeps failing. Point it at the Starnet container, keeping a backup of the previous file.
+function Sync-InstanceDatabaseUrl {
+  $config = Join-Path $script:InstanceDir "config.json"
+  if (-not (Test-Path $config)) { return }
+  $ErrorActionPreference = "Continue"
+  $nodeCode = "const fs=require('fs');const [f,u]=process.argv.slice(1);const c=JSON.parse(fs.readFileSync(f,'utf8'));" +
+    "const d=c.database||{};if(d.mode==='postgres'&&d.connectionString===u){console.log('same');process.exit(0)}" +
+    "fs.copyFileSync(f,f+'.bak-'+Date.now());c.database={...d,mode:'postgres',connectionString:u};" +
+    "fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');console.log('updated')"
+  $result = (& node -e $nodeCode $config $script:DatabaseUrl) -join ""
+  if ($LASTEXITCODE -ne 0) { Stop-Starnet "Gagal membaca $config." }
+  if ($result -eq "updated") { Write-Warn "Config instance menunjuk ke database lain; diarahkan ke Postgres Starnet (backup: config.json.bak-*)." }
+  else { Write-Ok "Config instance memakai Postgres Starnet" }
+}
+
 # Same call as the failing upstream postinstall (scripts/link-plugin-dev-sdk.mjs): a directory symlink. Windows
 # only allows it for admins or with Developer Mode on.
 function Test-DirSymlinkAllowed {

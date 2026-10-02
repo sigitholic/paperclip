@@ -14,6 +14,7 @@ $RepoDir = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 Write-Step "Starnet Office"
 Start-DockerEngine
 Start-StarnetPostgres
+Repair-StarnetDatabaseLogin
 
 if (Test-PaperclipHealth) {
   Write-Ok "Starnet sudah jalan di $PaperclipUrl"
@@ -21,6 +22,7 @@ if (Test-PaperclipHealth) {
   return
 }
 if (-not (Test-Onboarded)) { Stop-Starnet "Starnet belum di-setup. Jalankan packages\starnet-installer\install.cmd dulu." }
+Sync-InstanceDatabaseUrl
 
 Use-StarnetShell
 $env:PAPERCLIP_OPEN_ON_LISTEN = "false"
