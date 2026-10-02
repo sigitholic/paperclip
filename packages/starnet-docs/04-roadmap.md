@@ -14,7 +14,7 @@ Paperclip yang sudah ditemui; perlu disetujui sebelum dikerjakan.
 |---|---|---|
 | 0 | Fondasi: pack ISP, Office Chat, Virtual Office, P-0, CI, devkit, sync | ✅ Selesai |
 | 1 | Starnet Memory | ✅ Selesai (1.1–1.4) |
-| 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | 🟡 Sebagian: NOC Engineer (LLM) menjawab lewat tool gateway (STAA-35); konteks tersuntik ✅ (STAA-52); batas langkah/token ✅ (STAA-53); QA gate ✅ (STAA-55); sandbox belum |
+| 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | ✅ Selesai (isolasi baca menunggu core): NOC Engineer (LLM) menjawab lewat tool gateway (STAA-35); konteks tersuntik ✅ (STAA-52); batas langkah/token ✅ (STAA-53); QA gate ✅ (STAA-55); sandbox ✅ (STAA-57, tulis + jaringan) |
 | 3 | Tier model per agent (dilebur ke Fase 2) | ✅ Peta tier, skrip validasi, template bertier, `apply-tier` |
 | 4 | Pack OLT/billing + tool tulis di balik approval | ⬜ Rencana |
 | 5 | Agent factory / template office | ⬜ Rencana |
@@ -163,6 +163,48 @@ Seluruh alur sekitar 80 detik. Catatan: core membatalkan run executor (`issue_re
 reviewer; itu perilaku normal dan tidak dihitung bypass. Prototipe manual STAA-54 (reviewer Kepala Kantor, model combo
 `peperclip` macet) dibatalkan.
 
+**2.4 Sandbox — selesai 2 Okt 2026.** Sebelumnya semua agent `starnet_9router` berjalan lewat Codex ACP dengan izin
+`approve-all` langsung di host: shell agent punya akses penuh ke mesin. Jalur core tidak bisa dipakai tanpa patch:
+
+- Environment remote (SSH, sandbox provider Kubernetes/E2B/Daytona, dan lain-lain) hanya untuk tipe adapter di daftar
+  hardcode `REMOTE_MANAGED_ADAPTERS` (`packages/shared/src/environment-support.ts`); adapter eksternal tidak bisa
+  mendaftar. Usulan upstream di `STARNET_PATCHES.md`.
+- Sandbox proses lokal core (`local-process-sandbox`, bubblewrap) hanya Linux dan tidak didukung engine ACP.
+
+Karena itu adapter memakai sandbox bawaan Codex. Setelan `starnetSandbox` (default `workspace-write`) menjalankan
+engine CLI Codex memakai binary dari dependency `@openai/codex` 0.156.0, dengan `sandbox_mode="workspace-write"`, di
+Windows `windows.sandbox="unelevated"` (restricted token), dan `--skip-git-repo-check` (workspace fallback agent bukan
+repo git). Provider 9router diberikan lewat `-c model_providers.ninerouter.*`, karena CLI tidak membaca
+`MODEL_PROVIDER`/`CODEX_CONFIG` seperti codex-acp. `extraArgs` operator yang mengubah atau mem-bypass sandbox atau
+provider dibuang dan dicatat di log. `starnetSandbox: "off"` mengembalikan jalur ACP lama.
+
+| Setelan adapter | Default | Catatan |
+|---|---|---|
+| `starnetSandbox` | `workspace-write` | `off` = Codex ACP, akses host penuh |
+| `starnetSandboxNetwork` | mati | Mati: shell hanya menjangkau loopback (API Paperclip), bukan internet atau perangkat pelanggan. Panggilan model tidak terpengaruh |
+
+Uji sandbox Windows langsung (`codex sandbox`, tanpa model): tulis di workspace berhasil; tulis di luar workspace
+`Access is denied`; baca repo tetap bisa; dengan jaringan mati, `127.0.0.1:3100` tetap 200 sedangkan host internet
+`EACCES`.
+
+Bukti STAA-57 (NOC LLM → QA NOC): log `[starnet] sandbox: workspace-write (Codex CLI), network off (loopback only)`;
+tujuh perintah shell (PowerShell) berjalan, termasuk `node …starnet-pack-isp…` (tool pack) dan panggilan REST ke API
+Paperclip; `mikrotik.system_resource` mode live terjawab; menulis `C:\starnet-sandbox-probe.txt` ditolak
+(`Access to the path is denied`, file tidak ada). QA NOC menyetujui (`QA OK`) dan issue `done`, jadi context pack, QA
+gate, dan sandbox jalan bersama. Run pertama (STAA-56, dibatalkan) gagal karena workspace non-git sebelum
+`--skip-git-repo-check` ditambahkan.
+
+Batasan:
+
+- Hanya **tulis dan jaringan** yang dibatasi; **baca tidak**. Agent masih bisa membaca file di luar workspace
+  (misalnya `~/.paperclip`). Untuk isolasi baca, butuh environment remote core (usulan upstream) atau deploy Linux.
+- Engine CLI mengabaikan sinyal abort, jadi batas tool call menghentikan pohon proses lewat PID dari `onSpawn`
+  (`taskkill /T /F` di Windows, process group di POSIX). Ini teruji di unit test, belum dipicu live.
+- `starnetMaxContextTokens` hanya berlaku di ACP: usage `turn.completed` CLI adalah jumlah semua request satu turn,
+  bukan ukuran konteks.
+- Default berlaku untuk semua agent `starnet_9router` (NOC LLM, QA NOC, Kepala Kantor, CTO, Software Developer).
+  Agent yang butuh internet dari shell (misalnya `npm install`) perlu `starnetSandboxNetwork: true`.
+
 Kriteria selesai usulan:
 
 - E2E: pertanyaan NOC dijawab agent LLM lewat tool gateway, dengan context pack terbukti ada di prompt run.
@@ -177,7 +219,7 @@ Keputusan sebelum mulai:
 |---|---|
 | Model/provider default untuk dev | **Terjawab untuk dev lokal:** `codex_local` + login ChatGPT + `gpt-6-luna`. Model harus diisi eksplisit; default Codex (`gpt-6-astra`) dan `gpt-5.5` ditolak untuk paket Go, sedangkan `gpt-5.6-terra`/`gpt-5.6-luna` lolos (lihat Fase 3). Untuk produksi, pertimbangkan API key (tidak dibatasi paket) |
 | Loop memakai adapter LLM yang ada atau adapter sendiri | Terbuka. Bukti sejauh ini: adapter Codex core sudah cukup untuk chat, hire agent, dan tugas sederhana. Adapter Starnet baru dibutuhkan untuk konteks tersuntik dan batas loop/token |
-| Sandbox provider untuk dev lokal | Terbuka. Core sudah menyediakan banyak provider (Cloud / Sandbox agents) |
+| Sandbox provider untuk dev lokal | **Terjawab 2 Okt:** sandbox bawaan Codex (`workspace-write`) lewat adapter `starnet_9router` (2.4). Provider core belum bisa dipakai adapter eksternal |
 | Ukuran mutu agent | Baru: pakai **Agent evals & feedback** core untuk membandingkan NOC deterministik vs NOC LLM |
 
 ## Fase 3 — Tier model per agent (dilebur ke Fase 2)
@@ -307,7 +349,7 @@ Gateway & Apps dan Secrets Manager (tool dan kredensial pack-isp), Scheduled Rou
 Self-healing runs (retry run yang gagal), alur hire agent (dipakai Kepala Kantor), serta Enforced Outcomes dan
 Agent Reviews (review stage untuk QA gate Fase 2).
 
-**Fitur upstream selesai yang belum dipakai tapi relevan:** Cloud / Sandbox agents (sandbox Fase 2), Agent evals (mutu NOC LLM), Deep Planning (rencana sebelum tool tulis
+**Fitur upstream selesai yang belum dipakai tapi relevan:** Cloud / Sandbox agents (isolasi baca penuh; belum bisa dipakai adapter eksternal, lihat 2.4), Agent evals (mutu NOC LLM), Deep Planning (rencana sebelum tool tulis
 Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase lain).
 
 ## Pertanyaan terbuka
@@ -333,7 +375,8 @@ Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase
 - ~~Template agent Starnet memakai tier dari `@starnet/pack-kit` (Fase 3.3).~~ **Selesai 2 Okt** (`tierTemplate`, `apply-tier`).
 - ~~Catat `check:models` dan `apply-tier` di [06-pengembangan-lokal.md](./06-pengembangan-lokal.md).~~ **Selesai 2 Okt.**
 - ~~NOC LLM berikutnya: context pack `starnet.memory` di awal run.~~ **Selesai 2 Okt** (disuntik adapter
-  `starnet_9router`, STAA-52). ~~Batas loop/token per run.~~ **Selesai 2 Okt** (STAA-53). ~~QA gate.~~ **Selesai 2 Okt** (STAA-55, agent QA NOC). Berikutnya di Fase 2: sandbox.
+  `starnet_9router`, STAA-52). ~~Batas loop/token per run.~~ **Selesai 2 Okt** (STAA-53). ~~QA gate.~~ **Selesai 2 Okt** (STAA-55, agent QA NOC). ~~Sandbox.~~ **Selesai 2 Okt** (STAA-57, sandbox Codex
+  `workspace-write`).
 - Kandidat PR upstream: managed MCP gateway untuk adapter eksternal yang membungkus Codex (saat ini hanya `codex_local`).
 - ~~Perbarui bagian "Status rencana" di `.github/README.md`.~~ **Selesai 2 Okt** (Memory, tier, Pack NMS, Pack ISP
   multi-router; tabel path memuat `starnet-pack-nms`).

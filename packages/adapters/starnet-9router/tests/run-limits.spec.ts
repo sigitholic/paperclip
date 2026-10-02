@@ -50,6 +50,22 @@ describe("RunLimiter", () => {
     expect(l.observe(two.slice(cut))?.limit).toBe("tool_calls");
   });
 
+  it("counts Codex CLI tool items once by id and ignores messages and turn usage", () => {
+    const item = (event: string, id: string, type: string) => `${JSON.stringify({ type: event, item: { id, type } })}\n`;
+    const turn = `${JSON.stringify({ type: "turn.completed", usage: { input_tokens: 900_000 } })}\n`;
+    const l = new RunLimiter({ maxToolCalls: 2, maxContextTokens: 1_000 });
+    const chunk =
+      item("item.started", "i1", "command_execution") +
+      item("item.completed", "i1", "command_execution") +
+      item("item.completed", "i2", "agent_message") +
+      item("item.completed", "i3", "file_change") +
+      turn;
+    expect(l.observe(chunk)).toBeNull();
+    expect(l.toolCalls).toBe(2);
+    expect(l.contextTokens).toBe(0);
+    expect(l.observe(item("item.started", "i4", "mcp_tool_call"))).toEqual({ limit: "tool_calls", max: 2, observed: 3 });
+  });
+
   it("trips on the session context size from usage updates", () => {
     const l = new RunLimiter({ maxToolCalls: 0, maxContextTokens: 50_000 });
     expect(l.observe(usage(18_765) + toolCall("x"))).toBeNull();
@@ -115,5 +131,27 @@ describe("executeWithRunLimits", () => {
       return okResult;
     });
     expect(out).toBe(okResult);
+  });
+
+  it("stops the spawned process tree on a breach when the engine ignores the signal", async () => {
+    const { ctx } = runCtx({ starnetMaxToolCalls: 1 });
+    const spawnedSeen: unknown[] = [];
+    (ctx as { onSpawn?: unknown }).onSpawn = async (meta: unknown) => {
+      spawnedSeen.push(meta);
+    };
+    const stopped: unknown[] = [];
+    const cli = (id: string) => `${JSON.stringify({ type: "item.started", item: { id, type: "command_execution" } })}\n`;
+    const out = await executeWithRunLimits(
+      ctx,
+      async (c) => {
+        await c.onSpawn?.({ pid: 4321, processGroupId: null, startedAt: "now" });
+        await c.onLog("stdout", cli("x") + cli("y"));
+        return { ...okResult, exitCode: 1 };
+      },
+      { stopProcess: (target) => stopped.push(target) },
+    );
+    expect(spawnedSeen).toHaveLength(1);
+    expect(stopped).toEqual([{ pid: 4321, processGroupId: null }]);
+    expect(out.errorCode).toBe("starnet_run_limit");
   });
 });

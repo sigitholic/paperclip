@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "Starnet external Paperclip adapter: Codex (ACP engine) routed through a 9router OpenAI-compatible gateway.",
+  "description": "Starnet external Paperclip adapter: Codex (sandboxed CLI or ACP engine) routed through a 9router OpenAI-compatible gateway.",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -13,6 +13,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@openai/codex": "0.156.0",
     "@paperclipai/adapter-codex-local": "workspace:*",
     "@paperclipai/adapter-utils": "workspace:*",
     "@starnet/pack-kit": "workspace:*"

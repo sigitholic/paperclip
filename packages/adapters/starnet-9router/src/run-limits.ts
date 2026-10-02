@@ -6,7 +6,14 @@
  * of the same call) and tracks the session context size from `acpx.status` / `usage_update`
  * (`used`). On the first breach the adapter aborts the run through the same signal an operator
  * stop uses, so the engine cancels the turn cooperatively and then force-stops after `graceSec`.
+ *
+ * The sandboxed Codex CLI engine (`codex exec --json`) writes `item.started`/`item.completed`
+ * lines instead; tool items (shell commands, MCP calls, web searches, file edits) count as steps,
+ * deduplicated by item id. Its `turn.completed` usage sums every model request of the turn, so it
+ * is not a context size and the context limit only applies to the ACP engine. The CLI engine
+ * ignores the abort signal, so the adapter stops its process tree instead.
  */
+import { spawn } from "node:child_process";
 import type { AdapterExecutionResult } from "@paperclipai/adapter-utils";
 
 export const MAX_TOOL_CALLS_KEY = "starnetMaxToolCalls";
@@ -14,6 +21,8 @@ export const MAX_CONTEXT_TOKENS_KEY = "starnetMaxContextTokens";
 export const DEFAULT_MAX_TOOL_CALLS = 60;
 export const DEFAULT_MAX_CONTEXT_TOKENS = 200_000;
 export const RUN_LIMIT_ERROR_CODE = "starnet_run_limit";
+
+const CLI_TOOL_ITEM_TYPES = new Set(["command_execution", "mcp_tool_call", "web_search", "file_change", "collab_tool_call"]);
 
 export type RunLimits = { maxToolCalls: number; maxContextTokens: number };
 export type RunLimitBreach = { limit: "tool_calls" | "context_tokens"; max: number; observed: number };
@@ -59,7 +68,7 @@ export class RunLimiter {
   }
 
   private observeLine(line: string): RunLimitBreach | null {
-    if (!line.startsWith('{"type":"acpx.')) return null;
+    if (!line.startsWith('{"type":"acpx.') && !line.startsWith('{"type":"item.')) return null;
     let event: Record<string, unknown>;
     try {
       event = JSON.parse(line) as Record<string, unknown>;
@@ -68,6 +77,13 @@ export class RunLimiter {
     }
     if (event.type === "acpx.tool_call" && event.tag !== "tool_call_update") {
       const id = typeof event.toolCallId === "string" ? event.toolCallId : "";
+      if (id && this.toolCallIds.has(id)) return null;
+      if (id) this.toolCallIds.add(id);
+      this.toolCalls += 1;
+    } else if (event.type === "item.started" || event.type === "item.completed") {
+      const item = event.item && typeof event.item === "object" ? (event.item as Record<string, unknown>) : {};
+      if (!CLI_TOOL_ITEM_TYPES.has(String(item.type))) return null;
+      const id = typeof item.id === "string" ? `cli:${item.id}` : "";
       if (id && this.toolCallIds.has(id)) return null;
       if (id) this.toolCallIds.add(id);
       this.toolCalls += 1;
@@ -89,6 +105,37 @@ export class RunLimiter {
     }
     return this.breach;
   }
+}
+
+export type SpawnedProcess = { pid: number | null; processGroupId: number | null };
+
+const SIGKILL_GRACE_MS = 5_000;
+
+/**
+ * Stops a spawned engine process and its children: `taskkill /T /F` on Windows (a plain kill
+ * would leave the shell commands Codex started), the process group on POSIX with a SIGKILL
+ * follow-up. Never throws.
+ */
+export function stopProcessTree(target: SpawnedProcess, platform = process.platform): void {
+  if (platform === "win32") {
+    if (!target.pid) return;
+    try {
+      spawn("taskkill", ["/PID", String(target.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).on("error", () => undefined);
+    } catch {
+      // the process may already be gone
+    }
+    return;
+  }
+  const signal = (sig: NodeJS.Signals) => {
+    try {
+      if (target.processGroupId && target.processGroupId > 0) process.kill(-target.processGroupId, sig);
+      else if (target.pid && target.pid > 0) process.kill(target.pid, sig);
+    } catch {
+      // the process may already be gone
+    }
+  };
+  signal("SIGTERM");
+  setTimeout(() => signal("SIGKILL"), SIGKILL_GRACE_MS).unref();
 }
 
 /**

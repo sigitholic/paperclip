@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ADAPTER_TYPE, cachedModels, createServerAdapter, getConfigSchema, testEnvironment, toCodexConfig } from "../src/index.js";
+import { ADAPTER_TYPE, cachedModels, codexRunConfig, createServerAdapter, getConfigSchema, testEnvironment, toCodexConfig } from "../src/index.js";
 
 beforeEach(() => {
   process.env.PAPERCLIP_HOME = mkdtempSync(join(tmpdir(), "pc-home-"));
@@ -14,7 +14,9 @@ const ok = (models: string[]) => async () => ({ ok: true, status: 200, json: asy
 const ctx = (config: Record<string, unknown>) => ({ companyId: "c1", adapterType: ADAPTER_TYPE, config });
 
 describe("toCodexConfig", () => {
-  it("routes the codex ACP session through 9router and keeps other fields", () => {
+  const starnetKeys = ["ninerouterBaseUrl", "starnetTier", "starnetMemory", "starnetMaxToolCalls", "starnetMaxContextTokens", "starnetQaReviewer", "starnetSandbox", "starnetSandboxNetwork"];
+
+  it("routes the codex ACP session through 9router when the sandbox is off", () => {
     const out = toCodexConfig({
       ninerouterBaseUrl: "https://tunnel.example.com/",
       model: "my-combo",
@@ -25,15 +27,31 @@ describe("toCodexConfig", () => {
       starnetMaxToolCalls: 10,
       starnetMaxContextTokens: 1000,
       starnetQaReviewer: "qa-agent",
+      starnetSandbox: "off",
+      starnetSandboxNetwork: true,
       env: { NINEROUTER_API_KEY: "sk-1", OTHER: "y" },
     });
-    for (const key of ["ninerouterBaseUrl", "starnetTier", "starnetMemory", "starnetMaxToolCalls", "starnetMaxContextTokens", "starnetQaReviewer"]) {
-      expect(out).not.toHaveProperty(key);
-    }
+    for (const key of starnetKeys) expect(out).not.toHaveProperty(key);
     expect(out).toMatchObject({ model: "my-combo", instructionsFilePath: "/x/AGENTS.md", engine: "acp" });
     const env = out.env as Record<string, string>;
     expect(env).toMatchObject({ NINEROUTER_API_KEY: "sk-1", OTHER: "y", MODEL_PROVIDER: "ninerouter" });
     expect(JSON.parse(env.CODEX_CONFIG).model_providers.ninerouter.base_url).toBe("https://tunnel.example.com/v1");
+  });
+
+  it("runs the sandboxed Codex CLI by default with the 9router provider as -c overrides", () => {
+    const { config, sandboxed } = codexRunConfig({
+      ninerouterBaseUrl: "http://127.0.0.1:20128",
+      model: "m",
+      starnetQaReviewer: "qa",
+      env: { NINEROUTER_API_KEY: "sk-1" },
+    });
+    expect(sandboxed).toBe(true);
+    for (const key of starnetKeys) expect(config).not.toHaveProperty(key);
+    expect(config).toMatchObject({ engine: "cli", dangerouslyBypassApprovalsAndSandbox: false });
+    const args = config.extraArgs as string[];
+    expect(args).toContain('model_providers.ninerouter.base_url="http://127.0.0.1:20128/v1"');
+    expect(args).toContain('sandbox_mode="workspace-write"');
+    expect(args).toContain("sandbox_workspace_write.network_access=false");
   });
 
   it("fails clearly without a base URL", () => {
@@ -92,7 +110,7 @@ describe("adapter module", () => {
   it("exposes the type, the settings schema and the codex skill hooks", () => {
     const mod = createServerAdapter();
     expect(mod.type).toBe("starnet_9router");
-    expect(getConfigSchema().fields.map((f) => f.key)).toEqual(["ninerouterBaseUrl", "model", "starnetMemory", "starnetMaxToolCalls", "starnetMaxContextTokens", "starnetQaReviewer"]);
+    expect(getConfigSchema().fields.map((f) => f.key)).toEqual(["ninerouterBaseUrl", "model", "starnetMemory", "starnetMaxToolCalls", "starnetMaxContextTokens", "starnetQaReviewer", "starnetSandbox", "starnetSandboxNetwork"]);
     expect(typeof mod.syncSkills).toBe("function");
     expect(mod.supportsInstructionsBundle).toBe(true);
   });

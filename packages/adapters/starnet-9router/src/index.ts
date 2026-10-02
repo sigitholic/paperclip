@@ -1,9 +1,9 @@
 /**
  * @starnet/adapter-9router — external Paperclip adapter (installed from Instance settings → Adapters).
  *
- * Runs agents through the built-in Codex ACP lane, routed to a 9router OpenAI-compatible
- * gateway. The bundled codex-acp server reads `MODEL_PROVIDER` and `CODEX_CONFIG` from its
- * environment, so this adapter only rewrites the agent config before delegating to
+ * Runs agents through the built-in Codex lanes, routed to a 9router OpenAI-compatible gateway:
+ * the sandboxed CLI engine by default (see sandbox.ts), or the ACP engine when the sandbox is
+ * off. This adapter only rewrites the agent config before delegating to
  * `@paperclipai/adapter-codex-local`; it does not fork Codex execution.
  *
  * Agent settings (rendered from `getConfigSchema`):
@@ -50,7 +50,10 @@ import {
   MAX_TOOL_CALLS_KEY,
   resolveRunLimits,
   RunLimiter,
+  type SpawnedProcess,
+  stopProcessTree,
 } from "./run-limits.js";
+import { SANDBOX_KEY, SANDBOX_NETWORK_KEY, sandboxedCodexConfig, sandboxMode, sandboxNetwork } from "./sandbox.js";
 import { checkQaAfterRun, ensureQaStage, type IssueFetch, QA_BYPASS_ERROR_CODE, QA_REVIEWER_KEY, qaReviewer, type QaRequest } from "./qa-gate.js";
 
 export const ADAPTER_TYPE = NINEROUTER_ADAPTER_TYPE;
@@ -78,8 +81,13 @@ export function resolveBaseUrl(config: Record<string, unknown>): string {
   return normalizeBaseUrl(raw);
 }
 
-/** Codex adapter config that routes the ACP session through 9router. */
-export function toCodexConfig(config: Record<string, unknown>): Record<string, unknown> {
+export type CodexRunConfig = { config: Record<string, unknown>; sandboxed: boolean; droppedArgs: string[] };
+
+/**
+ * Codex adapter config routed through 9router: the sandboxed CLI engine by default, or the ACP
+ * engine with full host access when `starnetSandbox` is "off".
+ */
+export function codexRunConfig(config: Record<string, unknown>): CodexRunConfig {
   const baseUrl = resolveBaseUrl(config);
   const {
     [BASE_URL_KEY]: _url,
@@ -88,10 +96,19 @@ export function toCodexConfig(config: Record<string, unknown>): Record<string, u
     [MAX_TOOL_CALLS_KEY]: _maxToolCalls,
     [MAX_CONTEXT_TOKENS_KEY]: _maxContextTokens,
     [QA_REVIEWER_KEY]: _qaReviewer,
+    [SANDBOX_KEY]: _sandbox,
+    [SANDBOX_NETWORK_KEY]: _sandboxNetwork,
     ...rest
   } = config;
-  const gatewayEnv = codexGatewayEnv({ id: NINEROUTER_GATEWAY_ID, name: "9router", baseUrl, envKey: NINEROUTER_ENV_KEY });
-  return { ...rest, engine: "acp", env: { ...asRecord(config.env), ...gatewayEnv } };
+  const gateway = { id: NINEROUTER_GATEWAY_ID, name: "9router", baseUrl, envKey: NINEROUTER_ENV_KEY };
+  const acpConfig = { ...rest, engine: "acp", env: { ...asRecord(config.env), ...codexGatewayEnv(gateway) } };
+  if (sandboxMode(config) === "off") return { config: acpConfig, sandboxed: false, droppedArgs: [] };
+  const { config: cliConfig, dropped } = sandboxedCodexConfig(acpConfig, gateway, sandboxNetwork(config));
+  return { config: cliConfig, sandboxed: true, droppedArgs: dropped };
+}
+
+export function toCodexConfig(config: Record<string, unknown>): Record<string, unknown> {
+  return codexRunConfig(config).config;
 }
 
 export async function listGatewayModels(baseUrl: string, apiKey: string, fetchImpl: FetchLike = fetch as unknown as FetchLike): Promise<string[]> {
@@ -247,13 +264,31 @@ export function getConfigSchema(): AdapterConfigSchema {
         type: "text",
         hint: "Agent id of the QA reviewer. Issues this agent works on get a review stage for it, so they are not done without QA approval. Empty = no QA gate.",
       },
+      {
+        key: SANDBOX_KEY,
+        label: "Sandbox",
+        type: "select",
+        default: "workspace-write",
+        options: [
+          { value: "workspace-write", label: "Workspace only (Codex CLI sandbox)" },
+          { value: "off", label: "Off - full host access (Codex ACP)" },
+        ],
+        hint: "Workspace only: shell commands may write only to the workspace and temp dirs. Off: the agent runs with full access to this machine.",
+      },
+      {
+        key: SANDBOX_NETWORK_KEY,
+        label: "Sandbox network access",
+        type: "toggle",
+        default: false,
+        hint: "Off: shell commands reach only this machine (the Paperclip API), not the internet or customer devices. Model calls are not affected.",
+      },
     ],
   };
 }
 
 export const agentConfigurationDoc = `# ${ADAPTER_TYPE} agent configuration
 
-Adapter: ${ADAPTER_TYPE} (Starnet external adapter; Codex ACP routed through 9router)
+Adapter: ${ADAPTER_TYPE} (Starnet external adapter; Codex routed through 9router)
 
 Fields:
 - ${BASE_URL_KEY} (string, required): 9router base URL; "/v1" is appended when missing. Falls back to server env NINEROUTER_BASE_URL.
@@ -262,11 +297,16 @@ Fields:
 - ${MAX_TOOL_CALLS_KEY} (number, default ${DEFAULT_MAX_TOOL_CALLS}, 0 = off): stop the run after this many tool calls; the run fails with errorCode starnet_run_limit.
 - ${MAX_CONTEXT_TOKENS_KEY} (number, default ${DEFAULT_MAX_CONTEXT_TOKENS}, 0 = off): stop the run when the session context exceeds this many tokens.
 - ${QA_REVIEWER_KEY} (agent id, optional): before each run, add a review stage for this agent to the run's issue; a run that leaves the issue done without that review approved fails with errorCode ${QA_BYPASS_ERROR_CODE}.
+- ${SANDBOX_KEY} ("workspace-write" | "off", default "workspace-write"): "workspace-write" runs the Codex CLI engine (bundled @openai/codex binary unless command is set) in the Codex workspace-write sandbox; "off" runs the Codex ACP engine with full host access.
+- ${SANDBOX_NETWORK_KEY} (boolean, default false): network access for sandboxed shell commands. Loopback (the Paperclip API) stays reachable when off.
 - env.${NINEROUTER_ENV_KEY} (secret_ref, required): 9router API key bound to a company secret.
-- Other codex_local fields (instructionsFilePath, cwd, timeoutSec, modelReasoningEffort, ...) are passed through to the Codex ACP engine.
+- Other codex_local fields (instructionsFilePath, cwd, timeoutSec, modelReasoningEffort, extraArgs, ...) are passed through to Codex.
 
 Notes:
-- engine is forced to "acp": only codex-acp reads MODEL_PROVIDER/CODEX_CONFIG.
+- engine is set by ${SANDBOX_KEY}; a configured engine is ignored.
+- In the sandbox, extraArgs that change or bypass the sandbox or change the model provider are dropped.
+- Sandboxed runs confine writes and network, not reads.
+- ${MAX_CONTEXT_TOKENS_KEY} only applies to the ACP engine (sandbox off).
 - Do not connect subscription logins (ChatGPT, Claude, Copilot) to 9router: likely against provider terms.
 - Every prompt, including customer data and tool output, passes through the gateway. Run 9router with REQUIRE_API_KEY=true.
 `;
@@ -296,12 +336,18 @@ export async function injectMemoryContext(ctx: AdapterExecutionContext, fetchImp
 export async function executeWithRunLimits(
   ctx: AdapterExecutionContext,
   run: (ctx: AdapterExecutionContext) => Promise<AdapterExecutionResult>,
+  options: { stopProcess?: (target: SpawnedProcess) => void } = {},
 ): Promise<AdapterExecutionResult> {
   const limiter = new RunLimiter(resolveRunLimits(ctx.config));
   const { maxToolCalls, maxContextTokens } = limiter.limits;
   if (maxToolCalls === 0 && maxContextTokens === 0) return run(ctx);
   const controller = new AbortController();
   const signal = ctx.signal ? AbortSignal.any([ctx.signal, controller.signal]) : controller.signal;
+  let spawned: SpawnedProcess | null = null;
+  const onSpawn: AdapterExecutionContext["onSpawn"] = async (meta) => {
+    spawned = { pid: meta.pid ?? null, processGroupId: meta.processGroupId ?? null };
+    await ctx.onSpawn?.(meta);
+  };
   const onLog: AdapterExecutionContext["onLog"] = async (stream, chunk) => {
     await ctx.onLog(stream, chunk);
     if (stream !== "stdout" || controller.signal.aborted) return;
@@ -310,8 +356,9 @@ export async function executeWithRunLimits(
     const message = describeBreach(breach);
     await ctx.onLog("stdout", `[starnet] ${message}; stopping the run\n`);
     controller.abort(new Error(message));
+    if (spawned && options.stopProcess) options.stopProcess(spawned);
   };
-  const result = await run({ ...ctx, signal, onLog });
+  const result = await run({ ...ctx, signal, onLog, onSpawn });
   return limiter.breach && !ctx.signal?.aborted ? limitedResult(result, limiter) : result;
 }
 
@@ -356,16 +403,27 @@ export async function executeWithQaGate(
   };
 }
 
+/** One run-log line describing the sandbox the run uses. */
+export function describeSandbox(config: Record<string, unknown>, sandboxed: boolean, droppedArgs: string[]): string {
+  if (!sandboxed) return "[starnet] sandbox: off (Codex ACP, full host access)\n";
+  const network = sandboxNetwork(config) ? "on" : "off (loopback only)";
+  const dropped = droppedArgs.length ? `; dropped extraArgs: ${droppedArgs.join(" ")}` : "";
+  return `[starnet] sandbox: workspace-write (Codex CLI), network ${network}${dropped}\n`;
+}
+
 export function createServerAdapter(): ServerAdapterModule {
   return {
     type: ADAPTER_TYPE,
     runtimeToolDelivery: "native_mcp",
     execute: async (ctx: AdapterExecutionContext) => {
-      const config = toCodexConfig(ctx.config);
+      const { config, sandboxed, droppedArgs } = codexRunConfig(ctx.config);
       refreshCacheFromRun(ctx.config);
+      await ctx.onLog("stdout", describeSandbox(ctx.config, sandboxed, droppedArgs));
       const context = await injectMemoryContext(ctx);
       return executeWithQaGate({ ...ctx, context }, (gated) =>
-        executeWithRunLimits(gated, (limited) => codexExecute({ ...limited, config })),
+        executeWithRunLimits(gated, (limited) => codexExecute({ ...limited, config }), {
+          stopProcess: sandboxed ? stopProcessTree : undefined,
+        }),
       );
     },
     testEnvironment: (ctx) => testEnvironment(ctx),

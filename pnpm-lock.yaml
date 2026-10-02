@@ -394,6 +394,9 @@ importers:
 
   packages/adapters/starnet-9router:
     dependencies:
+      '@openai/codex':
+        specifier: 0.156.0
+        version: 0.156.0
       '@paperclipai/adapter-codex-local':
         specifier: workspace:*
         version: link:../codex-local

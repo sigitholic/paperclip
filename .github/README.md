@@ -44,7 +44,7 @@ adalah patch core **P-0** (bridge stream plugin, 4 file di `server/`) yang dicat
 - **Phase 3 (Tier model) — selesai:** tier template, `apply-tier`, `check:models`.
 - **Pack NMS (Zabbix + LibreNMS) — selesai:** `packages/plugins/starnet-pack-nms`, 3 tool read-only, webhook alert.
 - **Pack ISP — ditambah:** multi-MikroTik, RouterOS API transport (8728/8729), UI compact.
-- **Phase 2 — sebagian:** NOC Engineer (LLM) menjawab lewat tool gateway, dengan context pack Starnet Memory di setiap run, batas tool call/token per run, dan QA gate (issue baru `done` setelah disetujui agent QA NOC). Sandbox belum.
+- **Phase 2 — selesai:** NOC Engineer (LLM) menjawab lewat tool gateway, dengan context pack Starnet Memory di setiap run, batas tool call/token per run, QA gate (issue baru `done` setelah disetujui agent QA NOC), dan sandbox Codex `workspace-write` (shell hanya boleh menulis di workspace; jaringan shell hanya ke API Paperclip). Isolasi baca menunggu dukungan environment core untuk adapter eksternal.
 - **Phase 4–6 — rencana:** pack OLT/billing + write tool di balik approval, agent factory/template, multi-tenant.
 
 Daftar patch core dan usulan PR upstream: [`STARNET_PATCHES.md`](../STARNET_PATCHES.md).
