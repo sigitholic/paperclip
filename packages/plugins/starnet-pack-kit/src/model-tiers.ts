@@ -58,11 +58,27 @@ export const DEFAULT_CODEX_TIERS: TierMap = {
 
 export const NINEROUTER_GATEWAY_ID = "ninerouter";
 export const NINEROUTER_ENV_KEY = "NINEROUTER_API_KEY";
+/** External adapter `@starnet/adapter-9router`: Codex ACP with the 9router URL as a UI field. */
+export const NINEROUTER_ADAPTER_TYPE = "starnet_9router";
+export const NINEROUTER_BASE_URL_KEY = "ninerouterBaseUrl";
 
-/** Tier map for Codex routed through a 9router instance. Models are 9router ids or combo names. */
-export function ninerouterTiers(opts: { baseUrl: string; models: Record<ModelTier, string> }): TierMap {
+/**
+ * `adapterConfig` key a template uses to declare its tier. Plugins cannot edit an agent's
+ * adapterConfig after creation, so the devkit `apply-tier` script resolves it per company.
+ */
+export const TIER_CONFIG_KEY = "starnetTier";
+
+/**
+ * Tier map routed through a 9router instance. Models are 9router ids or combo names.
+ * `codex_local` carries the gateway in `env`; `starnet_9router` takes the URL as its own field.
+ */
+export function ninerouterTiers(opts: {
+  baseUrl: string;
+  models: Record<ModelTier, string>;
+  adapterType?: "codex_local" | typeof NINEROUTER_ADAPTER_TYPE;
+}): TierMap {
   return {
-    adapterType: "codex_local",
+    adapterType: opts.adapterType ?? "codex_local",
     gateway: { id: NINEROUTER_GATEWAY_ID, name: "9router", baseUrl: normalizeBaseUrl(opts.baseUrl), envKey: NINEROUTER_ENV_KEY },
     tiers: {
       fast: { model: opts.models.fast },
@@ -112,7 +128,26 @@ export function tierAdapterConfig(
         ...(choice.reasoningEffort ? { modelReasoningEffort: choice.reasoningEffort } : {}),
         ...(map.gateway ? { env: codexGatewayEnv(map.gateway, secrets.apiKey) } : {}),
       };
+    case NINEROUTER_ADAPTER_TYPE:
+      return {
+        model: choice.model,
+        ...(map.gateway ? { [NINEROUTER_BASE_URL_KEY]: map.gateway.baseUrl } : {}),
+        ...(secrets.apiKey ? { env: { [map.gateway?.envKey ?? NINEROUTER_ENV_KEY]: secrets.apiKey } } : {}),
+      };
     default:
       return { model: choice.model };
   }
+}
+
+/**
+ * Manifest fragment for a tiered agent template. The agent starts paused because its model
+ * and gateway are only known per company; `apply-tier` fills them in and resumes it.
+ */
+export function tierTemplate(tier: ModelTier, adapterType: string = NINEROUTER_ADAPTER_TYPE) {
+  return { adapterType, adapterConfig: { [TIER_CONFIG_KEY]: tier }, status: "paused" as const };
+}
+
+export function declaredTier(adapterConfig: unknown): ModelTier | null {
+  const value = adapterConfig && typeof adapterConfig === "object" ? (adapterConfig as Record<string, unknown>)[TIER_CONFIG_KEY] : undefined;
+  return isModelTier(value) ? value : null;
 }

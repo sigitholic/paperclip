@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   codexGatewayEnv,
+  declaredTier,
   DEFAULT_CODEX_TIERS,
   isModelTier,
   MODEL_TIERS,
   ninerouterTiers,
   normalizeBaseUrl,
   tierAdapterConfig,
+  tierTemplate,
   type TierMap,
 } from "../src/index.js";
 
@@ -56,5 +58,23 @@ describe("model tiers", () => {
   it("guards tier names", () => {
     expect(isModelTier("standard")).toBe(true);
     expect(isModelTier("cheap")).toBe(false);
+  });
+
+  it("resolves a 9router tier to the starnet_9router adapter fields", () => {
+    const map = ninerouterTiers({ baseUrl: "https://router.example.com", models: { fast: "a", standard: "combo", reasoning: "c" }, adapterType: "starnet_9router" });
+    expect(tierAdapterConfig("standard", map, { apiKey: { type: "secret_ref", secretId: "s-1" } })).toEqual({
+      model: "combo",
+      ninerouterBaseUrl: "https://router.example.com/v1",
+      env: { NINEROUTER_API_KEY: { type: "secret_ref", secretId: "s-1" } },
+    });
+    expect(tierAdapterConfig("fast", map)).toEqual({ model: "a", ninerouterBaseUrl: "https://router.example.com/v1" });
+  });
+
+  it("declares a tier in a paused template and reads it back", () => {
+    const template = tierTemplate("reasoning");
+    expect(template).toEqual({ adapterType: "starnet_9router", adapterConfig: { starnetTier: "reasoning" }, status: "paused" });
+    expect(declaredTier(template.adapterConfig)).toBe("reasoning");
+    expect(declaredTier({ starnetTier: "cheap" })).toBeNull();
+    expect(declaredTier(undefined)).toBeNull();
   });
 });

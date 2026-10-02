@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Seed (idempotently) a demo company on the local Paperclip instance:
 //   company "Starnet Demo" -> Starnet plugins installed/ready -> ISP pack `setup`
-//   (NOC Engineer + Daily PPPoE check) -> deny-by-default tool profile bound to the NOC agent
+//   (NOC Engineer, NOC Engineer (LLM), Daily PPPoE check) -> deny-by-default tool profile bound to both NOCs
 //   -> pack config: mock (default) or --live (fake RouterOS/GenieACS on 127.0.0.1, see fake-servers).
 // Usage: node packages/starnet-devkit/scripts/demo-seed.mjs [--company "Starnet Demo"] [--live|--mock]
 // Talks REST only (PAPERCLIP_URL, default http://127.0.0.1:3100); never touches a database.
@@ -60,18 +60,23 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
   // 3. ISP pack: managed NOC agent + routine.
   const setup = await api.action(ids["starnet.pack-isp"], "setup", companyId);
   const agentId = setup.agent?.agentId ?? setup.agent?.agent?.id;
+  const llmAgentId = setup.llmAgent?.agentId ?? setup.llmAgent?.agent?.id ?? null;
   const routineId = setup.routine?.routineId ?? setup.routine?.routine?.id ?? null;
   if (!agentId) throw new Error(`setup did not return the NOC agent: ${JSON.stringify(setup).slice(0, 200)}`);
+  const nocAgents = [agentId, ...(llmAgentId ? [llmAgentId] : [])];
 
-  // 3b. Least privilege (board step): the NOC agent must not hire agents, create skills or
+  // 3b. Least privilege (board step): NOC agents must not hire agents, create skills or
   // assign tasks. Managed-agent reconcile does not update existing agents, so enforce it here.
-  const nocPerms = (await api.get(`/agents/${agentId}`)).permissions ?? {};
-  if (nocPerms.canCreateAgents !== false || nocPerms.canCreateSkills !== false) {
-    await api.patch(`/agents/${agentId}/permissions`, { canCreateAgents: false, canCreateSkills: false, canAssignTasks: false });
-    log("NOC agent permissions reduced (no hiring, no skills, no task-assign grant)");
+  for (const id of nocAgents) {
+    const agent = await api.get(`/agents/${id}`);
+    const perms = agent.permissions ?? {};
+    if (perms.canCreateAgents !== false || perms.canCreateSkills !== false) {
+      await api.patch(`/agents/${id}/permissions`, { canCreateAgents: false, canCreateSkills: false, canAssignTasks: false });
+      log(`${agent.name} permissions reduced (no hiring, no skills, no task-assign grant)`);
+    }
   }
 
-  // 4. Board step: deny-by-default tool profile with the four read-only tools, bound to NOC.
+  // 4. Board step: deny-by-default tool profile with the four read-only tools, bound to both NOCs.
   const profiles = await api.get(`/companies/${companyId}/tools/profiles`);
   let profile = (Array.isArray(profiles) ? profiles : profiles.profiles ?? []).find((p) => p.profileKey === PROFILE_KEY);
   if (!profile) {
@@ -83,10 +88,12 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
       entries: ISP_TOOLS.map((toolName) => ({ selectorType: "tool_name", effect: "include", toolName })),
     });
   }
-  try {
-    await api.post(`/companies/${companyId}/tools/profiles/${profile.id}/bind`, { targetType: "agent", targetId: agentId });
-  } catch (err) {
-    if (err.status !== 409) throw err; // already bound
+  for (const id of nocAgents) {
+    try {
+      await api.post(`/companies/${companyId}/tools/profiles/${profile.id}/bind`, { targetType: "agent", targetId: id });
+    } catch (err) {
+      if (err.status !== 409) throw err; // already bound
+    }
   }
 
   // 5. Pack config: mock (no hosts) or live against the fake servers.
@@ -112,9 +119,9 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
     await api.post(`/plugins/${ids["starnet.pack-isp"]}/config`, { companyId, configJson: {} });
   }
 
-  const state = { companyId, companyName: company.name, issuePrefix: company.issuePrefix, plugins: ids, nocAgentId: agentId, routineId, toolProfileId: profile.id, mode, fake, seededAt: new Date().toISOString() };
+  const state = { companyId, companyName: company.name, issuePrefix: company.issuePrefix, plugins: ids, nocAgentId: agentId, nocLlmAgentId: llmAgentId, routineId, toolProfileId: profile.id, mode, fake, seededAt: new Date().toISOString() };
   writeState(state);
-  log(`seeded ${company.name} [${company.issuePrefix}] mode=${mode}: noc=${agentId} profile=${profile.id} -> ${STATE_FILE}`);
+  log(`seeded ${company.name} [${company.issuePrefix}] mode=${mode}: noc=${agentId} noc-llm=${llmAgentId ?? "-"} profile=${profile.id} -> ${STATE_FILE}`);
   return state;
 }
 

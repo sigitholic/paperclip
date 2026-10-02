@@ -1,8 +1,10 @@
 import { fileURLToPath } from "node:url";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
+import { tierTemplate } from "@starnet/pack-kit";
 
 export const PLUGIN_ID = "starnet.pack-isp";
 export const NOC_AGENT_KEY = "noc-engineer";
+export const NOC_LLM_AGENT_KEY = "noc-engineer-llm";
 export const DAILY_ROUTINE_KEY = "daily-pppoe-check";
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required });
@@ -44,6 +46,30 @@ const ROUTINE_BRIEF = `Daily NOC check (Starnet ISP pack).
 2. Post one comment summarizing: active PPPoE sessions, router CPU/memory/uptime, CPE online/offline counts, and anything abnormal (CPU > 80%, memory > 85%, offline CPE > 10%).
 3. State clearly if data came from MOCK mode (no device configured).
 4. Mark this issue done. Never change device configuration from this routine.`;
+
+const PACK_TOOL_CLI = fileURLToPath(new URL("../agent/pack-tool.mjs", import.meta.url));
+
+const NOC_LLM_INSTRUCTIONS = `# NOC Engineer (Starnet ISP pack)
+
+You are the NOC engineer of a Starnet ISP office. You monitor PPPoE sessions, router health and
+customer CPE devices.
+
+- Get data only from the starnet.pack-isp tools: mikrotik.list_pppoe_active, mikrotik.system_resource,
+  genieacs.list_devices, genieacs.device_status. Never guess numbers you did not read from a tool.
+- If these tools are not offered to you natively, call them from the shell through the Paperclip
+  tool gateway (same grants and policy):
+    node "${PACK_TOOL_CLI}" list
+    node "${PACK_TOOL_CLI}" mikrotik.list_pppoe_active limit=50
+    node "${PACK_TOOL_CLI}" genieacs.device_status deviceId=<id>
+  Pass parameters as key=value (no JSON quoting needed). Do not call device APIs or the gateway
+  in any other way.
+- All tools are read-only. Never change device configuration, never run shell commands against
+  network devices, and say so if a request needs a write action: it must go to a human operator.
+- Flag as abnormal: router CPU > 80%, memory > 85%, offline CPE > 10% of devices.
+- If a tool result says MOCK mode, state clearly that the data is not from a live device.
+- Reply in the requester's language (usually Indonesian). Keep answers short: the numbers, what is
+  abnormal, and the suggested next step.
+`;
 
 const manifest: PaperclipPluginManifestV1 = {
   id: PLUGIN_ID,
@@ -102,6 +128,21 @@ const manifest: PaperclipPluginManifestV1 = {
       permissions: { pluginTools: [PLUGIN_ID], canCreateAgents: false, canCreateSkills: false },
       status: "idle",
       budgetMonthlyCents: 0,
+    },
+    {
+      agentKey: NOC_LLM_AGENT_KEY,
+      displayName: "NOC Engineer (LLM)",
+      role: "engineer",
+      title: "NOC Engineer, LLM (Starnet ISP pack)",
+      icon: "radio-tower",
+      capabilities: "Answers NOC questions about PPPoE sessions, router health and CPE status using the Starnet ISP pack read-only tools.",
+      // Model and gateway are per company: run `pnpm --filter @starnet/devkit apply-tier` to fill
+      // them in and resume the agent. The deterministic NOC above keeps the daily routine.
+      ...tierTemplate("standard"),
+      runtimeConfig: { heartbeat: { enabled: false } },
+      permissions: { pluginTools: [PLUGIN_ID], canCreateAgents: false, canCreateSkills: false },
+      budgetMonthlyCents: 0,
+      instructions: { entryFile: "AGENTS.md", content: NOC_LLM_INSTRUCTIONS },
     },
   ],
   routines: [

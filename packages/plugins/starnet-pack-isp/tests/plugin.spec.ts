@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
 import { gatewayRisk } from "@starnet/pack-kit";
+import { parseParams, unwrapToolResult } from "../agent/pack-tool.mjs";
 import manifest, { PLUGIN_ID, TOOLS } from "../src/manifest.js";
 import plugin from "../src/worker.js";
 
@@ -24,6 +25,27 @@ describe("manifest", () => {
     expect(r.assigneeRef).toEqual({ resourceKind: "agent", resourceKey: "noc-engineer" });
     expect(r.triggers![0]).toMatchObject({ cronExpression: "0 7 * * *", timezone: "Asia/Jakarta" });
   });
+  it("declares the LLM NOC by tier only: paused, no model, same read-only tools", () => {
+    const llm = manifest.agents!.find((a) => a.agentKey === "noc-engineer-llm")!;
+    expect(llm).toMatchObject({ adapterType: "starnet_9router", status: "paused", adapterConfig: { starnetTier: "standard" } });
+    expect(llm.adapterConfig).not.toHaveProperty("model");
+    expect(llm.permissions).toMatchObject({ pluginTools: [PLUGIN_ID], canCreateAgents: false });
+    expect(llm.instructions?.content).toContain("read-only");
+    expect(llm.instructions?.content).toMatch(/pack-tool\.mjs" mikrotik\.list_pppoe_active limit=50/);
+  });
+
+  it("pack-tool parses key=value parameters (shell-safe) and a JSON object", () => {
+    expect(parseParams(["limit=50", "onlineOnly=true", "deviceId=00A1-ZTE"])).toEqual({ limit: 50, onlineOnly: true, deviceId: "00A1-ZTE" });
+    expect(parseParams(['{"limit":5}'])).toEqual({ limit: 5 });
+    expect(parseParams([])).toEqual({});
+    expect(() => parseParams(["limit"])).toThrow(/key=value/);
+  });
+
+  it("pack-tool unwraps the gateway envelope down to the plugin result", () => {
+    const inner = { content: "[MOCK] 3 sessions", data: { total: 3 } };
+    expect(unwrapToolResult({ result: { result: inner } })).toEqual(inner);
+    expect(unwrapToolResult({ error: "denied" })).toEqual({ error: "denied" });
+  });
 });
 
 describe("setup action", () => {
@@ -31,7 +53,13 @@ describe("setup action", () => {
     const h = await harness();
     const calls: string[] = [];
     const routine = (assigneeAgentId: string) => ({ routineId: "r1", routine: { id: "r1", assigneeAgentId }, status: "resolved" });
-    Object.assign(h.ctx.agents.managed, { reconcile: async () => ({ agentId: "noc-new", agent: { id: "noc-new" }, status: "created" }) });
+    Object.assign(h.ctx.agents.managed, {
+      reconcile: async (key: string) => {
+        calls.push(`agent:${key}`);
+        const id = key === "noc-engineer" ? "noc-new" : "noc-llm";
+        return { agentId: id, agent: { id }, status: "created" };
+      },
+    });
     Object.assign(h.ctx.routines.managed, {
       reconcile: async () => { calls.push("reconcile"); return routine(routineAssignee); },
       reset: async () => { calls.push("reset"); return routine("noc-new"); },
@@ -40,15 +68,16 @@ describe("setup action", () => {
     return { out, calls };
   }
 
-  it("re-points the daily routine when the NOC agent was recreated", async () => {
+  it("re-points the daily routine to the deterministic NOC when it was recreated", async () => {
     const { out, calls } = await setupWith("noc-terminated");
-    expect(calls).toEqual(["reconcile", "reset"]);
+    expect(calls).toEqual(["agent:noc-engineer", "agent:noc-engineer-llm", "reconcile", "reset"]);
     expect(out.routine.routine.assigneeAgentId).toBe("noc-new");
+    expect(out.llmAgent.agentId).toBe("noc-llm");
   });
 
   it("leaves an already-linked routine alone", async () => {
     const { calls } = await setupWith("noc-new");
-    expect(calls).toEqual(["reconcile"]);
+    expect(calls).toEqual(["agent:noc-engineer", "agent:noc-engineer-llm", "reconcile"]);
   });
 });
 

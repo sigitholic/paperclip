@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { classifyFailure, codexHomeFor, excerpt, listedCodexModels, readCodexFailure } from "../lib/model-probe.mjs";
-import { listGatewayModels, parseTiers } from "../scripts/model-tiers-check.mjs";
+import { parseTiers } from "../lib/tier-cli.mjs";
+import { listGatewayModels } from "../scripts/model-tiers-check.mjs";
 
 const SPAN = `session_loop{thread_id=01a0}:turn{otel.name="session_task.turn" ${"x".repeat(400)}}: `;
 

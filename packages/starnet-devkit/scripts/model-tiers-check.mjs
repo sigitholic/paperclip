@@ -17,6 +17,7 @@
 // Exit code 1 when any tier-map model fails. Talks REST to a local Paperclip instance only.
 import { client } from "../lib/api.mjs";
 import { classifyFailure, codexHomeFor, listedCodexModels, readCodexFailure } from "../lib/model-probe.mjs";
+import { arg, findCompany, findSecretId, list, parseTiers, upsertSecret } from "../lib/tier-cli.mjs";
 import {
   codexGatewayEnv,
   DEFAULT_CODEX_TIERS,
@@ -27,28 +28,7 @@ import {
 } from "../../plugins/starnet-pack-kit/src/model-tiers.ts";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
-const NINEROUTER_SECRET_NAME = "starnet-9router-api-key";
-
-function arg(name, fallback) {
-  const i = process.argv.indexOf(name);
-  return i > 0 ? process.argv[i + 1] : fallback;
-}
-
-const list = (s) => s?.split(",").map((m) => m.trim()).filter(Boolean);
-
-export function parseTiers(spec) {
-  if (!spec) return null;
-  const pairs = Object.fromEntries(list(spec).map((p) => p.split("=").map((x) => x.trim())));
-  const missing = MODEL_TIERS.filter((t) => !pairs[t]);
-  if (missing.length) throw new Error(`--tiers is missing ${missing.join(", ")} (format: fast=a,standard=b,reasoning=c)`);
-  return Object.fromEntries(MODEL_TIERS.map((t) => [t, pairs[t]]));
-}
-
-async function findCompany(api, name) {
-  const company = (await api.get("/companies")).find((c) => c.name === name || c.issuePrefix === name || c.id === name);
-  if (!company) throw new Error(`company "${name}" not found`);
-  return company;
-}
+export const NINEROUTER_SECRET_NAME = "starnet-9router-api-key";
 
 /** Read-only connectivity check against the gateway; costs no quota. */
 export async function listGatewayModels(baseUrl, apiKey, fetchImpl = fetch) {
@@ -56,22 +36,6 @@ export async function listGatewayModels(baseUrl, apiKey, fetchImpl = fetch) {
   if (!res.ok) throw new Error(`GET ${baseUrl}/models -> ${res.status}`);
   const body = await res.json();
   return (body.data ?? body.models ?? []).map((m) => m.id ?? m.name).filter(Boolean);
-}
-
-async function upsertSecret(api, companyId, name, value) {
-  const secrets = await api.get(`/companies/${companyId}/secrets`);
-  const existing = (Array.isArray(secrets) ? secrets : secrets.secrets ?? secrets.items ?? []).find((s) => s.name === name);
-  if (existing) {
-    await api.post(`/secrets/${existing.id}/rotate`, { value });
-    return existing.id;
-  }
-  const created = await api.post(`/companies/${companyId}/secrets`, { name, value, description: "9router API key for Starnet codex_local agents (@starnet/devkit)" });
-  return created.id;
-}
-
-async function findSecretId(api, companyId, name) {
-  const secrets = await api.get(`/companies/${companyId}/secrets`);
-  return (Array.isArray(secrets) ? secrets : secrets.secrets ?? secrets.items ?? []).find((s) => s.name === name)?.id ?? null;
 }
 
 async function waitForRun(api, issueId, timeoutMs) {

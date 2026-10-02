@@ -14,8 +14,8 @@ Paperclip yang sudah ditemui; perlu disetujui sebelum dikerjakan.
 |---|---|---|
 | 0 | Fondasi: pack ISP, Office Chat, Virtual Office, P-0, CI, devkit, sync | ✅ Selesai |
 | 1 | Starnet Memory | ✅ Selesai (1.1–1.4) |
-| 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | 🟡 Sebagian: agent LLM sudah jalan lewat adapter Codex core; adapter Starnet sendiri belum |
-| 3 | Tier model per agent (dilebur ke Fase 2) | 🟡 Peta tier + skrip validasi selesai; template pack belum |
+| 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | 🟡 Sebagian: NOC Engineer (LLM) menjawab lewat tool gateway (STAA-35); konteks tersuntik, batas loop, dan QA gate belum |
+| 3 | Tier model per agent (dilebur ke Fase 2) | ✅ Peta tier, skrip validasi, template bertier, `apply-tier` |
 | 4 | Pack OLT/billing + tool tulis di balik approval | ⬜ Rencana |
 | 5 | Agent factory / template office | ⬜ Rencana |
 | 6 | Multi-tenant | ⬜ Rencana (sebagian besar sudah core) |
@@ -118,7 +118,7 @@ core. Jadi tier diselesaikan **saat agent dibuat**, bukan saat run.
 |---|---|---|
 | 3.1 | Peta tier di `@starnet/pack-kit` (`src/model-tiers.ts`): `DEFAULT_CODEX_TIERS` dan `tierAdapterConfig(tier)` → `{ model, modelReasoningEffort }` | ✅ |
 | 3.2 | Skrip validasi `pnpm --filter @starnet/devkit check:models -- --company <nama> --yes`: satu run kecil per model lewat agent probe sementara; kegagalan dijelaskan dari log Codex sendiri | ✅ |
-| 3.3 | Template agent di pack mendeklarasikan `tier`; `setup` pack mengubahnya menjadi `adapterConfig` lewat `tierAdapterConfig` | ⬜ Bersamaan dengan pemulihan NOC Engineer |
+| 3.3 | Template agent mendeklarasikan tier lewat `tierTemplate(tier)` (`adapterConfig.starnetTier`, status `paused`); `pnpm --filter @starnet/devkit apply-tier` mengisi model, URL 9router, dan secret per company lalu me-resume agent. Plugin SDK tidak punya API untuk mengubah `adapterConfig` agent setelah dibuat, jadi tier tidak bisa diterapkan dari `setup` | ✅ |
 | 3.4 | Override per issue lewat `assigneeAdapterOverrides.adapterConfig` (sudah ada di core) | ⏸ Ditunda sampai ada kebutuhan nyata |
 
 **Kenapa probe memakai run sungguhan.** Endpoint `test-environment` adapter Codex melewati hello probe saat engine
@@ -150,6 +150,19 @@ Keterbatasan karena core mengenali beberapa perilaku hanya untuk type `codex_loc
 git workspace, dan resume sesi tidak berlaku untuk `starnet_9router`; tool plugin tetap tersedia lewat runtime tools. Catatan risiko: jangan hubungkan
 login langganan (ChatGPT/Claude/Copilot) ke 9router karena berisiko melanggar ToS provider; semua prompt agent (termasuk
 data pelanggan ISP) melewati gateway; jalankan 9router dengan `REQUIRE_API_KEY=true` dan ganti password dashboard default.
+
+**NOC Engineer (LLM), 2 Okt 2026.** Pack-isp kini membuat agent kedua `noc-engineer-llm` (adapter `starnet_9router`,
+tier `standard`) di samping NOC deterministik, yang tetap memegang routine harian. Temuan dari uji di Starnet Demo:
+
+| Temuan | Akibat |
+|---|---|
+| Combo 9router `peperclip` (Claude lewat Vertex) gagal dengan `acpx_turn_failed` (2/2 run NOC; sesekali juga di Kepala Kantor), tanpa jejak di log Codex dan tanpa provider trace (`trace_channel_missing:rust_native`) | Untuk agent Codex ACP pakai model `cx/*` (format Responses asli). `cx/gpt-6-luna` lolos semua run |
+| Tool plugin hanya dikirim sebagai MCP ke `codex_local` (`MANAGED_MCP_LOCAL_ADAPTERS` di core); adapter eksternal hanya mendapat runtime tools koneksi | NOC LLM memanggil tool lewat `agent/pack-tool.mjs` (REST tool gateway, token run, grant dan policy tetap berlaku). Argumen `key=value` karena PowerShell merusak kutip JSON |
+| `permissions.pluginTools` di manifest tidak dibaca server; izin datang dari tool profile | Seed demo mem-bind profile "Starnet NOC (read-only)" ke kedua NOC |
+| Instruksi agent terkelola tidak ikut diperbarui oleh `reconcile` | Perbarui lewat `PUT /agents/:id/instructions-bundle/file` atau reset agent lalu `apply-tier` |
+
+Hasil: STAA-35 dijawab NOC LLM ("PPPoE aktif: 137 sesi. CPU router: 23%, memori: 41%. Data MOCK") lewat tiga panggilan
+tool gateway, lalu issue ditandai `done`.
 
 **Kriteria selesai:**
 
@@ -227,8 +240,10 @@ Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase
 - ~~Pulihkan agent NOC Engineer di Starnet Demo (di-terminate 29 Sep).~~ **Selesai 2 Okt:** seed demo membuat NOC
   baru lewat `setup` pack-isp; `setup` kini juga menautkan ulang routine "Daily PPPoE check" bila routine masih menunjuk
   agent lama (sebelumnya routine tertinggal `paused` pada agent yang di-terminate). Cek harian STAA-27 selesai oleh NOC baru.
-- Template agent Starnet memakai tier dari `@starnet/pack-kit` (Fase 3.3), dan catat `check:models` di
-  [06-pengembangan-lokal.md](./06-pengembangan-lokal.md).
+- ~~Template agent Starnet memakai tier dari `@starnet/pack-kit` (Fase 3.3).~~ **Selesai 2 Okt** (`tierTemplate`, `apply-tier`).
+- Catat `check:models` dan `apply-tier` di [06-pengembangan-lokal.md](./06-pengembangan-lokal.md).
+- NOC LLM berikutnya: context pack `starnet.memory` di awal run (lewat helper seperti `pack-tool.mjs`), lalu QA gate.
+- Kandidat PR upstream: managed MCP gateway untuk adapter eksternal yang membungkus Codex (saat ini hanya `codex_local`).
 - Perbarui bagian "Status rencana" di `.github/README.md`: plugin `starnet.memory` dan Memory UI sudah selesai.
 - Commit perbaikan Windows untuk `packages/starnet-devkit/scripts/demo-seed.mjs` dan catatan kandidat PR upstream 7.
 - README devkit masih menyebut default branch fork `master`; sekarang sudah `starnet/main`, jadi jadwal sync bisa

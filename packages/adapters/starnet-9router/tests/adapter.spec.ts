@@ -20,9 +20,11 @@ describe("toCodexConfig", () => {
       model: "my-combo",
       instructionsFilePath: "/x/AGENTS.md",
       engine: "cli",
+      starnetTier: "standard",
       env: { NINEROUTER_API_KEY: "sk-1", OTHER: "y" },
     });
     expect(out).not.toHaveProperty("ninerouterBaseUrl");
+    expect(out).not.toHaveProperty("starnetTier");
     expect(out).toMatchObject({ model: "my-combo", instructionsFilePath: "/x/AGENTS.md", engine: "acp" });
     const env = out.env as Record<string, string>;
     expect(env).toMatchObject({ NINEROUTER_API_KEY: "sk-1", OTHER: "y", MODEL_PROVIDER: "ninerouter" });

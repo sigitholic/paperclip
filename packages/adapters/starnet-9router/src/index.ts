@@ -30,10 +30,18 @@ import {
   sessionCodec as codexSessionCodec,
   syncCodexSkills,
 } from "@paperclipai/adapter-codex-local/server";
-import { codexGatewayEnv, NINEROUTER_ENV_KEY, NINEROUTER_GATEWAY_ID, normalizeBaseUrl } from "@starnet/pack-kit";
+import {
+  codexGatewayEnv,
+  NINEROUTER_ADAPTER_TYPE,
+  NINEROUTER_BASE_URL_KEY,
+  NINEROUTER_ENV_KEY,
+  NINEROUTER_GATEWAY_ID,
+  normalizeBaseUrl,
+  TIER_CONFIG_KEY,
+} from "@starnet/pack-kit";
 
-export const ADAPTER_TYPE = "starnet_9router";
-export const BASE_URL_KEY = "ninerouterBaseUrl";
+export const ADAPTER_TYPE = NINEROUTER_ADAPTER_TYPE;
+export const BASE_URL_KEY = NINEROUTER_BASE_URL_KEY;
 
 type FetchLike = (url: string, init: { headers: Record<string, string>; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
@@ -60,7 +68,7 @@ export function resolveBaseUrl(config: Record<string, unknown>): string {
 /** Codex adapter config that routes the ACP session through 9router. */
 export function toCodexConfig(config: Record<string, unknown>): Record<string, unknown> {
   const baseUrl = resolveBaseUrl(config);
-  const { [BASE_URL_KEY]: _omit, ...rest } = config;
+  const { [BASE_URL_KEY]: _url, [TIER_CONFIG_KEY]: _tier, ...rest } = config;
   const gatewayEnv = codexGatewayEnv({ id: NINEROUTER_GATEWAY_ID, name: "9router", baseUrl, envKey: NINEROUTER_ENV_KEY });
   return { ...rest, engine: "acp", env: { ...asRecord(config.env), ...gatewayEnv } };
 }
