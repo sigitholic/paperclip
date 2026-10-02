@@ -1,5 +1,7 @@
 import { usePluginData, type PluginWidgetProps } from "@paperclipai/plugin-sdk/ui";
 
+export { SettingsPage } from "./settings.js";
+
 type LastCheck = {
   checkedAt?: string;
   pppoe?: { mode: string; active: number };

@@ -24,6 +24,14 @@ Each source (MikroTik, GenieACS) is **mock** until its host is configured:
 
 Set the config with `POST /api/plugins/:pluginId/config` `{ companyId, configJson }` or on the plugin settings page.
 
+The plugin ships its own settings page (`settingsPage` slot, replaces the auto-generated form):
+
+- routers in a compact table, edited one at a time;
+- a company-secret picker that can also create a secret inline (the value goes straight to the host secret store, never into the plugin config);
+- **Test connections**, which checks the saved config per router and GenieACS (`test-connections` action).
+
+Saving from this page writes every router, including the old flat one, to `mikrotikRouters`; the flat `mikrotik*` fields are still read for configs saved through the API.
+
 | key | meaning |
 | --- | --- |
 | `mikrotikHost`, `mikrotikPort`, `mikrotikUsername` | RouterOS endpoint. Use a read-only RouterOS user group. |

@@ -101,6 +101,7 @@ const manifest: PaperclipPluginManifestV1 = {
     "agents.managed",
     "routines.managed",
     "ui.dashboardWidget.register",
+    "instance.settings.register",
   ],
   entrypoints: { worker: "./dist/worker.js", ui: "./dist/ui" },
   instanceConfigSchema: {
@@ -207,7 +208,11 @@ const manifest: PaperclipPluginManifestV1 = {
     },
   ],
   ui: {
-    slots: [{ type: "dashboardWidget", id: "noc-widget", displayName: "NOC status", exportName: "NocWidget" }],
+    slots: [
+      { type: "dashboardWidget", id: "noc-widget", displayName: "NOC status", exportName: "NocWidget" },
+      // Replaces the auto-generated config form: compact router table, secret picker, connection test.
+      { type: "settingsPage", id: "isp-settings", displayName: "Starnet ISP Pack", exportName: "SettingsPage" },
+    ],
   },
 };
 

@@ -3,6 +3,7 @@ import { assertGatewayRisk, packResult } from "@starnet/pack-kit";
 import { DAILY_ROUTINE_KEY, NOC_AGENT_KEY, NOC_LLM_AGENT_KEY, TOOLS } from "./manifest.js";
 import {
   deviceStatus,
+  genieacsMode,
   listDevices,
   listPppoeActive,
   mikrotikEndpoint,
@@ -136,6 +137,43 @@ const plugin = definePlugin({
     });
 
     ctx.actions.register("run-daily-check", async (params) => ctx.routines.managed.run(DAILY_ROUTINE_KEY, companyIdOf(params)));
+
+    // Settings page "Test connections": checks the saved config, one result per source.
+    ctx.actions.register("test-connections", async (params) => {
+      const companyId = companyIdOf(params);
+      const cfg = ((await ctx.config.get(companyId)) ?? {}) as PackConfig;
+      const secret: ResolveSecret = (ref, configPath) => ctx.secrets.resolve(ref as EnvSecretRefBinding, { companyId, configPath });
+      const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+      let names: string[];
+      try {
+        names = mikrotikRouters(cfg).map((r) => r.name);
+      } catch (err) {
+        return { routers: [], genieacs: null, error: message(err) };
+      }
+      const routers = await Promise.all(
+        names.map(async (name) => {
+          try {
+            const [o] = (await systemResource(cfg, secret, name)).routers;
+            return o?.ok
+              ? { name, ok: true, summary: `${o.value.board} RouterOS ${o.value.version}, CPU ${o.value.cpuLoadPct}%` }
+              : { name, ok: false, error: o?.ok === false ? o.error : "no result" };
+          } catch (err) {
+            const m = message(err);
+            return { name, ok: false, error: m.startsWith(`${name}: `) ? m.slice(name.length + 2) : m };
+          }
+        }),
+      );
+      let genieacs: { ok: boolean; summary?: string; error?: string } | null = null;
+      if (genieacsMode(cfg) === "live") {
+        try {
+          const { devices } = await listDevices(cfg, secret);
+          genieacs = { ok: true, summary: `${devices.filter((d) => d.online).length}/${devices.length} CPE online` };
+        } catch (err) {
+          genieacs = { ok: false, error: message(err) };
+        }
+      }
+      return { routers, genieacs };
+    });
   },
 
   async onHealth() {
