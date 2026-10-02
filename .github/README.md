@@ -19,11 +19,13 @@ Branch utama fork: **`starnet/main`** (default branch). Kerja baru lewat PR ke b
 
 | Path | Pemilik | Isi |
 | --- | --- | --- |
-| `packages/plugins/starnet-pack-isp/` | Starnet | Plugin ISP: 4 tool read-only (`mikrotik.list_pppoe_active`, `mikrotik.system_resource`, `genieacs.list_devices`, `genieacs.device_status`), agent NOC Engineer (adapter `process`, tanpa LLM), routine harian 07:00 WIB, widget dashboard. [README](../packages/plugins/starnet-pack-isp/README.md) |
+| `packages/plugins/starnet-pack-isp/` | Starnet | Plugin ISP: 5 tool read-only (`mikrotik.list_routers`, `mikrotik.list_pppoe_active`, `mikrotik.system_resource`, `genieacs.list_devices`, `genieacs.device_status`), multi-MikroTik (REST atau RouterOS API 8728/8729), agent NOC Engineer (adapter `process`) dan NOC Engineer (LLM), routine harian 07:00 WIB, widget dashboard. [README](../packages/plugins/starnet-pack-isp/README.md) |
 | `packages/plugins/starnet-office-chat/` | Starnet | Halaman Office Chat. [README](../packages/plugins/starnet-office-chat/README.md) |
 | `packages/plugins/starnet-virtual-office/` | Starnet | Halaman Virtual Office + widget. [README](../packages/plugins/starnet-virtual-office/README.md) |
-| `packages/plugins/starnet-pack-kit/` | Starnet | Helper bersama untuk pack Starnet. |
-| `packages/starnet-devkit/` | Starnet | Seed demo, server palsu RouterOS/GenieACS, E2E, skrip sync upstream, guard "no core edits". [README](../packages/starnet-devkit/README.md) |
+| `packages/plugins/starnet-pack-nms/` | Starnet | Plugin NMS: 3 tool read-only (`nms.list_sources`, `nms.list_problems`, `nms.host_status`) untuk Zabbix + LibreNMS, webhook alert → issue NOC, widget dashboard. [README](../packages/plugins/starnet-pack-nms/README.md) |
+| `packages/plugins/starnet-pack-kit/` | Starnet | Helper bersama untuk pack Starnet (`fetchJson`, `tierTemplate`, `qualifyTool`). |
+| `packages/starnet-devkit/` | Starnet | Seed demo, server palsu RouterOS/GenieACS, E2E, skrip sync upstream, guard "no core edits", `check:models`, `apply-tier`. [README](../packages/starnet-devkit/README.md) |
+| `packages/plugins/starnet-memory/` | Starnet | Plugin Starnet Memory: L1 per issue/agent, pin, context pack untuk agent, halaman Memory. |
 | `packages/starnet-memory-core/` | Starnet | Logika Starnet Memory (Phase 1, library murni). [README](../packages/starnet-memory-core/README.md) |
 | `.github/workflows/starnet-ci.yml`, `starnet-upstream-sync.yml` | Starnet | CI khusus Starnet + sync upstream mingguan. |
 | `.github/README.md` (file ini), [`STARNET_PATCHES.md`](../STARNET_PATCHES.md) | Starnet | Dokumentasi fork. |
@@ -38,10 +40,12 @@ adalah patch core **P-0** (bridge stream plugin, 4 file di `server/`) yang dicat
 
 - **Phase 0 (fondasi) — selesai:** plugin ISP, Office Chat, Virtual Office, patch stream P-0, CI Starnet,
   devkit + E2E, sync upstream mingguan, least-privilege agent NOC.
-- **Phase 1 (Starnet Memory) — sedang jalan:** `packages/starnet-memory-core` sudah masuk; plugin
-  `starnet.memory` dan Memory UI menyusul.
-- **Phase 2–6 — rencana:** runtime adapter Starnet (sandbox, policy, QA gate), router LLM, pack OLT/billing
-  + write tool di balik approval, agent factory/template, multi-tenant.
+- **Phase 1 (Starnet Memory) — selesai:** `packages/starnet-memory-core`, plugin `starnet.memory`, Memory UI.
+- **Phase 3 (Tier model) — selesai:** tier template, `apply-tier`, `check:models`.
+- **Pack NMS (Zabbix + LibreNMS) — selesai:** `packages/plugins/starnet-pack-nms`, 3 tool read-only, webhook alert.
+- **Pack ISP — ditambah:** multi-MikroTik, RouterOS API transport (8728/8729), UI compact.
+- **Phase 2 — sebagian:** NOC Engineer (LLM) menjawab lewat tool gateway; konteks otomatis, batas loop, QA gate belum.
+- **Phase 4–6 — rencana:** pack OLT/billing + write tool di balik approval, agent factory/template, multi-tenant.
 
 Daftar patch core dan usulan PR upstream: [`STARNET_PATCHES.md`](../STARNET_PATCHES.md).
 Riwayat per langkah: [PR yang sudah di-merge](https://github.com/sigitholic/paperclip/pulls?q=is%3Apr+is%3Amerged+base%3Astarnet%2Fmain).
@@ -166,15 +170,16 @@ yang tercatat di registry service, jadi bisa saja tidak mengenai server yang sed
 `demo-seed.mjs` idempotent (aman dijalankan ulang). Urutannya:
 
 1. **Install plugin** (sekali per instance) dari path lokal, kalau belum ada: `starnet.pack-isp`,
-   `starnet.office-chat`, `starnet.virtual-office`. Plugin harus sudah di-build (langkah `build` di atas).
+   `starnet.office-chat`, `starnet.virtual-office`, `starnet.memory`, `starnet.pack-nms`. Plugin harus sudah
+   di-build (langkah `build` di atas).
 2. **Buat company** "Starnet Demo" (prefix `STA`). Pakai `--company "Nama Lain"` untuk company lain,
    termasuk company yang sudah kamu buat di UI.
 3. **Setup pack ISP:** membuat agent **NOC Engineer** dan routine **Daily PPPoE check**, lalu mengecilkan
    izin agent NOC (tidak bisa merekrut agent, membuat skill, atau assign task).
 4. **Langkah board (wajib): tool profile.** Tool gateway Paperclip *deny-by-default*: plugin tidak bisa
    memberi akses tool ke agent, harus board (manusia). Seed membuat tool profile
-   **"Starnet NOC (read-only)"** (`defaultAction: deny`, hanya 4 tool `starnet.pack-isp:*`) dan
-   mem-bind-nya ke NOC Engineer. Tanpa langkah ini NOC Engineer tidak bisa memanggil tool apa pun.
+   **"Starnet NOC (read-only)"** (`defaultAction: deny`, hanya tool read-only `starnet.pack-isp:*` dan
+   `starnet.pack-nms:*`) dan mem-bind-nya ke kedua agent NOC. Tanpa langkah ini NOC Engineer tidak bisa memanggil tool apa pun.
 5. **Config pack:** mode mock (default) atau `--live` (ke server palsu di `127.0.0.1`).
 
 Mau melakukannya manual (tanpa seed)? Install plugin dengan CLI, lalu ikuti langkah "Setup" di

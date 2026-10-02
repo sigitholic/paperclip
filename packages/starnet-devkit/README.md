@@ -58,5 +58,5 @@ After merging a sync PR:
 
 The workflow `.github/workflows/starnet-upstream-sync.yml` runs the same script: weekly on Mondays at 02:00 WIB, or on demand with "Run workflow". Two GitHub limitations apply:
 
-- **Schedule needs the default branch.** A `schedule` only fires from the repository's **default branch**. The fork's default branch is `master`, so either switch it to `starnet/main` or trigger the workflow manually.
+- **Schedule needs the default branch.** A `schedule` only fires from the repository's **default branch**. The fork's default branch is now `starnet/main`. If it is still set to `master`, switch it in the repository settings or trigger the workflow manually.
 - **GITHUB_TOKEN is too weak.** It cannot push merges that touch `.github/workflows/**`, and PRs it opens don't trigger `pull_request` CI (the script dispatches `starnet-ci` itself to compensate). Opening the PR also needs "Allow GitHub Actions to create and approve pull requests" to be on. Adding a fine-grained PAT as the repo secret `STARNET_SYNC_TOKEN` (fork only; contents, pull requests and workflows read/write) avoids all of this.

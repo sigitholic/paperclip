@@ -116,6 +116,8 @@ Patch ini hilang kalau file itu di-reset atau ditimpa `git pull`.
 | Update | `git pull`, `pnpm install`, build plugin Starnet, restart `pnpm dev` |
 | Instance terpisah untuk eksperimen | `PORT=3200 pnpm dev --data-dir ./tmp/pc-lab` |
 | Matikan telemetri | `PAPERCLIP_TELEMETRY_DISABLED=1` |
+| Cek model tier | `node packages/starnet-devkit/scripts/model-tiers-check.mjs --company "Starnet Demo" [--yes]` |
+| Terapkan tier ke agent | `node packages/starnet-devkit/scripts/apply-tier.mjs --base-url <url> --tiers fast=a,standard=b,reasoning=c [--yes]` |
 
 ## 6.5 Menghubungkan perangkat asli
 

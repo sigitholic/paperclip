@@ -250,17 +250,20 @@ Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase
 
 ## Pekerjaan kecil yang terbuka
 
-- Commit perubahan yang belum di-commit dalam satu PR: perbaikan Office Chat (OC-1), dokumen `packages/starnet-docs/`,
-  `demo-seed.mjs`, dan `STARNET_PATCHES.md`. Jangan ikutkan tambalan lokal `server/src/services/plugin-loader.ts`.
+- ~~Commit perubahan yang belum di-commit dalam satu PR: perbaikan Office Chat (OC-1), dokumen `packages/starnet-docs/`,
+  `demo-seed.mjs`, dan `STARNET_PATCHES.md`.~~ **Selesai 2 Okt.** Tambalan lokal `server/src/services/plugin-loader.ts`
+  tetap tidak di-commit.
 - ~~Pulihkan agent NOC Engineer di Starnet Demo (di-terminate 29 Sep).~~ **Selesai 2 Okt:** seed demo membuat NOC
   baru lewat `setup` pack-isp; `setup` kini juga menautkan ulang routine "Daily PPPoE check" bila routine masih menunjuk
   agent lama (sebelumnya routine tertinggal `paused` pada agent yang di-terminate). Cek harian STAA-27 selesai oleh NOC baru.
 - ~~Template agent Starnet memakai tier dari `@starnet/pack-kit` (Fase 3.3).~~ **Selesai 2 Okt** (`tierTemplate`, `apply-tier`).
-- Catat `check:models` dan `apply-tier` di [06-pengembangan-lokal.md](./06-pengembangan-lokal.md).
+- ~~Catat `check:models` dan `apply-tier` di [06-pengembangan-lokal.md](./06-pengembangan-lokal.md).~~ **Selesai 2 Okt.**
 - NOC LLM berikutnya: context pack `starnet.memory` di awal run (lewat helper seperti `pack-tool.mjs`), lalu QA gate.
 - Kandidat PR upstream: managed MCP gateway untuk adapter eksternal yang membungkus Codex (saat ini hanya `codex_local`).
-- Perbarui bagian "Status rencana" di `.github/README.md`: plugin `starnet.memory` dan Memory UI sudah selesai.
-- Commit perbaikan Windows untuk `packages/starnet-devkit/scripts/demo-seed.mjs` dan catatan kandidat PR upstream 7.
-- README devkit masih menyebut default branch fork `master`; sekarang sudah `starnet/main`, jadi jadwal sync bisa
-  berjalan. Perbarui kalimat itu. Secret `STARNET_SYNC_TOKEN` tetap disarankan agar PR sync memicu CI dan bisa
-  menyentuh `.github/workflows/**`.
+- ~~Perbarui bagian "Status rencana" di `.github/README.md`.~~ **Selesai 2 Okt** (Memory, tier, Pack NMS, Pack ISP
+  multi-router; tabel path memuat `starnet-pack-nms`).
+- ~~Commit perbaikan Windows untuk `packages/starnet-devkit/scripts/demo-seed.mjs` dan catatan kandidat PR upstream 7.~~
+  **Selesai** (guard `pathToFileURL`, kandidat 7 di `STARNET_PATCHES.md`).
+- ~~README devkit masih menyebut default branch fork `master`.~~ **Selesai 2 Okt.** Masih terbuka: secret
+  `STARNET_SYNC_TOKEN` disarankan agar PR sync memicu CI dan bisa menyentuh `.github/workflows/**`.
+- Live test Pack NMS terhadap Zabbix/LibreNMS nyata (ditunda; butuh URL + token read-only).
