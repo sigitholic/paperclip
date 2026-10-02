@@ -46,8 +46,9 @@ $WindowsPatchFile = "server\src\services\plugin-loader.ts"
 function Sync-Repo([string]$Dir) {
   $ErrorActionPreference = "Continue"
   if (-not (Test-Path (Join-Path $Dir ".git"))) {
+    # Shallow: the full upstream history is large and not needed to run or update (git pull works).
     Write-Host "    ..  Clone $RepoUrl ($Branch) ke $Dir" -ForegroundColor Gray
-    & git clone --branch $Branch $RepoUrl $Dir
+    & git clone --depth 1 --branch $Branch $RepoUrl $Dir
     if ($LASTEXITCODE -ne 0) { throw "git clone gagal. Cek koneksi internet." }
     return
   }
