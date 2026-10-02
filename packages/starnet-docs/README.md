@@ -17,7 +17,7 @@ fork Paperclip ini, sebagai plugin dan paket baru, tanpa mengubah kode inti Pape
 | 1 | [Latar belakang dan keputusan](./01-latar-belakang-dan-keputusan.md) | Dari Starnet Office ke Paperclip: masalahnya apa, kenapa pindah, aturan yang kami pegang |
 | 2 | [Arsitektur](./02-arsitektur.md) | Bagaimana Starnet menempel di Paperclip: konsep inti, paket, alur data, keamanan |
 | 3 | [Peta migrasi](./03-peta-migrasi.md) | Setiap fitur dan ADR Starnet Office, padanannya di Paperclip, dan statusnya |
-| 4 | [Roadmap](./04-roadmap.md) | Fase 0–6: yang sudah selesai (dengan PR), yang berikutnya, dan pertanyaan terbuka |
+| 4 | [Roadmap](./04-roadmap.md) | Fase 0–6: yang sudah selesai (dengan PR), kemajuan terbaru, keselarasan dengan `ROADMAP.md` upstream, dan pertanyaan terbuka |
 | 5 | [Aturan kerja dan kontribusi](./05-aturan-kerja.md) | Aturan no-core-edits, patch P-0, alur PR, sync upstream, CI |
 | 6 | [Pengembangan lokal](./06-pengembangan-lokal.md) | Menjalankan di Linux/macOS/WSL2 dan di Windows native (dengan catatan khusus) |
 | 7 | [Audit bug 2026-09-27](./07-audit-bug-2026-09-27.md) | Temuan bug dari instance lokal Windows: pembuatan agent, run agent, plugin, UI; prioritas dan rencana perbaikan |
