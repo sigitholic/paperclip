@@ -55,7 +55,7 @@ Riwayat per langkah: [PR yang sudah di-merge](https://github.com/sigitholic/pape
 | pnpm | **9.15.4**, otomatis lewat Corepack (`corepack enable`). Jangan pakai pnpm global versi lain. |
 | Rust (cargo) | Toolchain stable via [rustup](https://rustup.rs). `pnpm dev` meng-compile binary native `paperclip-runnerd` saat pertama jalan (±2–5 menit). |
 | Compiler C | Linux: `build-essential` (Debian/Ubuntu). macOS: `xcode-select --install`. |
-| OS | Linux atau macOS. **Windows: pakai WSL2 (Ubuntu)** dan clone di dalam filesystem WSL (`~/...`), bukan di `/mnt/c/...`. |
+| OS | Linux atau macOS. Windows: pakai WSL2 (Ubuntu) dan clone di dalam filesystem WSL (`~/...`), bukan di `/mnt/c/...`, atau jalankan langsung di Windows lewat [langkah khusus Windows](#windows-tanpa-wsl). |
 | Port bebas | `3100` (API + UI), `13100` (Vite HMR), `54329` (Postgres embedded). |
 
 PostgreSQL **tidak perlu** di-install: Paperclip menjalankan Postgres embedded sendiri. Data disimpan di
@@ -98,6 +98,68 @@ pnpm --filter @starnet/devkit e2e
 ```
 
 Hasil yang diharapkan: seed mencetak `seeded Starnet Demo [STA] mode=mock ...` dan E2E `2 passed`.
+
+## Windows (tanpa WSL)
+
+Paperclip bisa jalan langsung di Windows dengan Git Bash, tapi ada dua hal yang berbeda dari Linux/macOS:
+
+- pnpm di Windows menjalankan script lewat `cmd.exe`, padahal beberapa script build memakai perintah
+  Unix (`mkdir -p`, `cp`). pnpm harus diarahkan ke Git Bash.
+- Postgres embedded menolak jalan kalau user Windows punya hak administrator
+  (`Execution of PostgreSQL by a user with administrative permissions is not permitted`). Postgres
+  dijalankan di Docker, lalu Paperclip diarahkan ke sana.
+
+Prasyarat tambahan: [Git for Windows](https://git-scm.com/download/win) (Git Bash),
+[Docker Desktop](https://www.docker.com/products/docker-desktop/), dan untuk Rust: rustup plus
+Visual Studio Build Tools dengan workload **Desktop development with C++** (linker MSVC).
+
+Semua perintah di bawah dijalankan di **Git Bash**:
+
+```bash
+# 1. Node 24 LTS, Rust, pnpm
+winget install OpenJS.NodeJS.LTS Rustlang.Rustup
+corepack enable
+
+# 2. Arahkan pnpm ke Git Bash (sekali per komputer)
+pnpm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe"
+
+# 3. Postgres di Docker (Docker Desktop harus sudah jalan)
+docker run -d --name paperclip-postgres --restart unless-stopped \
+  -e POSTGRES_USER=paperclip -e POSTGRES_PASSWORD=paperclip -e POSTGRES_DB=paperclip \
+  -p 127.0.0.1:5441:5432 -v paperclip-pgdata:/var/lib/postgresql/data \
+  postgres:17-alpine
+
+# 4. Clone, install, onboard sekali dengan DATABASE_URL
+git clone https://github.com/sigitholic/paperclip.git starnet-paperclip
+cd starnet-paperclip
+pnpm install
+DATABASE_URL=postgres://paperclip:paperclip@127.0.0.1:5441/paperclip \
+  pnpm paperclipai onboard --yes --no-install-service
+```
+
+Buka terminal baru setelah `winget install` supaya `node` dan `cargo` terbaca. `onboard` menyimpan
+alamat database ke `~/.paperclip/instances/default/config.json`, jadi setelah itu `DATABASE_URL` tidak
+perlu di-set lagi. Tekan **Ctrl+C** setelah banner muncul, lalu jalankan seperti biasa:
+
+```bash
+pnpm dev
+```
+
+Banner harus menampilkan `Database  postgres://paperclip:***@127.0.0.1:5441/paperclip`. UI:
+<http://127.0.0.1:3100>. Setiap kali komputer dinyalakan, pastikan Docker Desktop sudah jalan sebelum
+`pnpm dev`.
+
+**Menghentikan server.** Tekan Ctrl+C di terminal tempat `pnpm dev` jalan. Kalau terminalnya sudah
+tertutup dan server masih jalan di background, cari PID pemilik port 3100 lalu matikan seluruh rantainya:
+
+```bash
+netstat -ano | findstr :3100
+taskkill //PID <PID> //T //F
+```
+
+Di Git Bash flag `taskkill` ditulis dengan dua garis miring (`//PID`), karena satu garis miring diubah
+Git Bash menjadi path. Di `cmd.exe` cukup satu (`/PID`). `pnpm dev:stop` hanya menghentikan proses
+yang tercatat di registry service, jadi bisa saja tidak mengenai server yang sedang memakai port.
 
 ## Setup awal: apa yang dilakukan seed
 
@@ -247,6 +309,11 @@ Jadi kamu cukup `git pull` dari fork ini; tidak perlu menarik upstream sendiri.
 | Seed: `... is not built` | Jalankan `pnpm --filter "./packages/plugins/starnet-*" build`. |
 | Seed/E2E: `Paperclip is not reachable` | `pnpm dev` belum siap atau port lain. Cek `curl http://127.0.0.1:3100/api/health`. |
 | Postgres embedded tidak mau start setelah crash | Pastikan tidak ada proses Paperclip lain yang masih jalan (`pnpm dev:list`; hentikan dengan Ctrl+C di terminalnya atau `pnpm dev:stop`), lalu start lagi. Paperclip otomatis memakai ulang atau membersihkan Postgres miliknya. **Reset total** (hapus semua data lokal): hentikan Paperclip, hapus `~/.paperclip/instances/default`, lalu ulangi `onboard`. |
+| Windows: `The syntax of the command is incorrect` saat build `@paperclipai/shared` | pnpm masih memakai `cmd.exe`. Jalankan `pnpm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe"`, lalu `pnpm dev` lagi. Error `Command "tsx" not found` yang muncul sesudahnya cuma akibat dari build yang gagal ini. |
+| Windows: `Execution of PostgreSQL by a user with administrative permissions is not permitted` | Postgres embedded tidak bisa jalan di akun admin. Pakai Postgres di Docker dan `onboard` dengan `DATABASE_URL` seperti di [langkah Windows](#windows-tanpa-wsl). |
+| Windows: `No such built-in module: node:sqlite` | Node terlalu lama. Install Node 24 (`winget install OpenJS.NodeJS.LTS`), buka terminal baru, cek `node -v`. |
+| Windows: `connect ECONNREFUSED 127.0.0.1:5441` | Docker Desktop atau container `paperclip-postgres` belum jalan. Jalankan `docker start paperclip-postgres`. |
+| Server masih jalan di background setelah terminal ditutup | Cari PID dengan `netstat -ano \| findstr :3100`, lalu `taskkill //PID <PID> //T //F` (Git Bash). |
 | Ingin instance terpisah untuk eksperimen | `PORT=3200 pnpm dev --data-dir ./tmp/pc-lab` (data di folder itu, tidak mengganggu instance utama). |
 | Telemetri | Matikan dengan `PAPERCLIP_TELEMETRY_DISABLED=1`. |
 
