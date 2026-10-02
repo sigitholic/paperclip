@@ -15,7 +15,7 @@ Paperclip yang sudah ditemui; perlu disetujui sebelum dikerjakan.
 | 0 | Fondasi: pack ISP, Office Chat, Virtual Office, P-0, CI, devkit, sync | ✅ Selesai |
 | 1 | Starnet Memory | ✅ Selesai (1.1–1.4) |
 | 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | 🟡 Sebagian: agent LLM sudah jalan lewat adapter Codex core; adapter Starnet sendiri belum |
-| 3 | Router LLM | ⬜ Rencana |
+| 3 | Tier model per agent (dilebur ke Fase 2) | 🟡 Peta tier + skrip validasi selesai; template pack belum |
 | 4 | Pack OLT/billing + tool tulis di balik approval | ⬜ Rencana |
 | 5 | Agent factory / template office | ⬜ Rencana |
 | 6 | Multi-tenant | ⬜ Rencana (sebagian besar sudah core) |
@@ -101,18 +101,62 @@ Keputusan sebelum mulai:
 
 | Keputusan | Status per 2 Okt 2026 |
 |---|---|
-| Model/provider default untuk dev | **Terjawab untuk dev lokal:** `codex_local` + login ChatGPT + `gpt-6-luna`. Model harus diisi eksplisit; default Codex (`gpt-6-astra`) dan `gpt-5.5` ditolak untuk paket Go. Untuk produksi, pertimbangkan API key (tidak dibatasi paket) |
+| Model/provider default untuk dev | **Terjawab untuk dev lokal:** `codex_local` + login ChatGPT + `gpt-6-luna`. Model harus diisi eksplisit; default Codex (`gpt-6-astra`) dan `gpt-5.5` ditolak untuk paket Go, sedangkan `gpt-5.6-terra`/`gpt-5.6-luna` lolos (lihat Fase 3). Untuk produksi, pertimbangkan API key (tidak dibatasi paket) |
 | Loop memakai adapter LLM yang ada atau adapter sendiri | Terbuka. Bukti sejauh ini: adapter Codex core sudah cukup untuk chat, hire agent, dan tugas sederhana. Adapter Starnet baru dibutuhkan untuk konteks tersuntik dan batas loop/token |
 | Sandbox provider untuk dev lokal | Terbuka. Core sudah menyediakan banyak provider (Cloud / Sandbox agents) |
 | Ukuran mutu agent | Baru: pakai **Agent evals & feedback** core untuk membandingkan NOC deterministik vs NOC LLM |
 
-## Fase 3 — Router LLM (usulan)
+## Fase 3 — Tier model per agent (dilebur ke Fase 2)
 
-**Tujuan:** tier `fast | standard | reasoning` per agent dan per tujuan (ADR-005), di atas konfigurasi model per agent
-yang sudah ada di core.
+**Tujuan:** tier `fast | standard | reasoning` per agent (ADR-005) tanpa router runtime dan tanpa mengubah core.
 
-Catatan: kaji dulu sejauh mana konfigurasi adapter dan `ai_provider_defaults` core sudah mencukupi, supaya tidak
-membangun ulang. Kemungkinan besar cukup menjadi bagian dari runtime adapter Starnet (Fase 2).
+**Alasan desain.** Upstream PR #12683 (1 Sep 2026) menghapus `modelProfiles`/model murah. Core kini hanya punya
+satu jalur pemilihan model: `adapterConfig` milik agent. Router runtime Starnet akan melawan arah itu dan menyentuh
+core. Jadi tier diselesaikan **saat agent dibuat**, bukan saat run.
+
+| Langkah | Isi | Status |
+|---|---|---|
+| 3.1 | Peta tier di `@starnet/pack-kit` (`src/model-tiers.ts`): `DEFAULT_CODEX_TIERS` dan `tierAdapterConfig(tier)` → `{ model, modelReasoningEffort }` | ✅ |
+| 3.2 | Skrip validasi `pnpm --filter @starnet/devkit check:models -- --company <nama> --yes`: satu run kecil per model lewat agent probe sementara; kegagalan dijelaskan dari log Codex sendiri | ✅ |
+| 3.3 | Template agent di pack mendeklarasikan `tier`; `setup` pack mengubahnya menjadi `adapterConfig` lewat `tierAdapterConfig` | ⬜ Bersamaan dengan pemulihan NOC Engineer |
+| 3.4 | Override per issue lewat `assigneeAdapterOverrides.adapterConfig` (sudah ada di core) | ⏸ Ditunda sampai ada kebutuhan nyata |
+
+**Kenapa probe memakai run sungguhan.** Endpoint `test-environment` adapter Codex melewati hello probe saat engine
+ACP aktif, dan daftar model Codex (`models_cache.json`) memuat model yang ternyata ditolak. Hanya run sungguhan yang
+membuktikan akses.
+
+**Hasil probe pertama (2 Okt 2026, ChatGPT Go, Starnet Demo):**
+
+| Model | Hasil |
+|---|---|
+| `gpt-6-luna` | ✅ lolos (STAA-22) |
+| `gpt-5.6-terra` | ✅ lolos (STAA-23) |
+| `gpt-5.6-luna` | ✅ lolos (STAA-24) |
+| `gpt-5.5` | ❌ `404 model does not exist or you do not have access` (STAA-25) |
+
+Peta default tetap memakai `gpt-6-luna` untuk ketiga tier, dibedakan lewat `modelReasoningEffort` (`low`/`medium`/`high`).
+Model `gpt-5.6-*` kini terbukti tersedia sebagai alternatif bila perlu tier yang lebih murah atau lebih kuat.
+
+**Gateway 9router (2 Okt 2026).** Peta tier bisa mengarahkan `codex_local` ke gateway yang kompatibel dengan OpenAI,
+misalnya [9router](https://github.com/decolua/9router), tanpa adapter baru dan tanpa mengubah core. `codex-acp` yang
+dibundel membaca `MODEL_PROVIDER` dan `CODEX_CONFIG` dari environment, jadi `ninerouterTiers({ baseUrl, models })` di
+`@starnet/pack-kit` cukup mengisi `adapterConfig.env` agent (API key sebagai `secret_ref`, secret
+`starnet-9router-api-key`). Validasi: `check:models --provider 9router --base-url <url>`.
+Untuk pengaturan lewat UI ada adapter eksternal `@starnet/adapter-9router` (`packages/adapters/starnet-9router`, type
+`starnet_9router`): dipasang dari Instance settings → Adapters → Install Adapter (path lokal paket), lalu muncul sebagai
+"Starnet 9router" di dropdown adapter agent dengan field "9router URL" dan "Model / combo"; API key diisi di tab
+Secrets & variables agent sebagai `NINEROUTER_API_KEY`. Adapter ini membungkus eksekusi Codex ACP core (tanpa fork).
+Keterbatasan karena core mengenali beberapa perilaku hanya untuk type `codex_local`: MCP gateway terkelola, persiapan
+git workspace, dan resume sesi tidak berlaku untuk `starnet_9router`; tool plugin tetap tersedia lewat runtime tools. Catatan risiko: jangan hubungkan
+login langganan (ChatGPT/Claude/Copilot) ke 9router karena berisiko melanggar ToS provider; semua prompt agent (termasuk
+data pelanggan ISP) melewati gateway; jalankan 9router dengan `REQUIRE_API_KEY=true` dan ganti password dashboard default.
+
+**Kriteria selesai:**
+
+- Tidak ada nama model yang di-hardcode di template atau plugin; semua lewat peta tier.
+- `check:models` lolos untuk semua model di peta tier pada akun target.
+- Ganti provider atau paket = ubah satu peta tier.
+- `core-diff-check` tetap hijau (tidak ada file core yang berubah).
 
 ## Fase 4 — Pack OLT/billing + tool tulis (usulan)
 
@@ -180,8 +224,10 @@ Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase
 
 - Commit perubahan yang belum di-commit dalam satu PR: perbaikan Office Chat (OC-1), dokumen `packages/starnet-docs/`,
   `demo-seed.mjs`, dan `STARNET_PATCHES.md`. Jangan ikutkan tambalan lokal `server/src/services/plugin-loader.ts`.
-- Pulihkan agent NOC Engineer di Starnet Demo (di-terminate 29 Sep) lewat `setup` pack-isp atau seed demo.
-- Jadikan `gpt-6-luna` model default di template agent Starnet, dan catat di
+- ~~Pulihkan agent NOC Engineer di Starnet Demo (di-terminate 29 Sep).~~ **Selesai 2 Okt:** seed demo membuat NOC
+  baru lewat `setup` pack-isp; `setup` kini juga menautkan ulang routine "Daily PPPoE check" bila routine masih menunjuk
+  agent lama (sebelumnya routine tertinggal `paused` pada agent yang di-terminate). Cek harian STAA-27 selesai oleh NOC baru.
+- Template agent Starnet memakai tier dari `@starnet/pack-kit` (Fase 3.3), dan catat `check:models` di
   [06-pengembangan-lokal.md](./06-pengembangan-lokal.md).
 - Perbarui bagian "Status rencana" di `.github/README.md`: plugin `starnet.memory` dan Memory UI sudah selesai.
 - Commit perbaikan Windows untuk `packages/starnet-devkit/scripts/demo-seed.mjs` dan catatan kandidat PR upstream 7.

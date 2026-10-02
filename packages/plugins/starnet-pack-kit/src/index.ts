@@ -5,6 +5,7 @@
  *    assert (in tests and at registration) how the gateway will classify a tool.
  * 2. `fetchJson()` — HTTP GET with a hard timeout and secret-free error messages.
  * 3. `packResult()` — uniform tool output that always states live vs mock.
+ * 4. Model tiers (`model-tiers.ts`) — template tier -> concrete adapterConfig model.
  */
 
 export type GatewayRisk = "read" | "write" | "destructive";
@@ -72,3 +73,5 @@ export function serialByKey() {
     return next;
   };
 }
+
+export * from "./model-tiers.js";

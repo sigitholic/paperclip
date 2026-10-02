@@ -9,9 +9,10 @@
     "fake-servers": "node ./scripts/fake-servers.mjs",
     "e2e": "vitest run --config ./vitest.config.mjs e2e",
     "test": "vitest run --config ./vitest.config.mjs tests",
-    "typecheck": "node --check ./scripts/core-diff-check.mjs && node --check ./scripts/demo-seed.mjs && node --check ./scripts/fake-servers.mjs && bash -n ./scripts/upstream-sync.sh",
+    "typecheck": "node --check ./scripts/core-diff-check.mjs && node --check ./scripts/demo-seed.mjs && node --check ./scripts/fake-servers.mjs && node --check ./scripts/model-tiers-check.mjs && node --check ./lib/model-probe.mjs && bash -n ./scripts/upstream-sync.sh",
     "build": "node -e \"\"",
-    "check:core": "node ./scripts/core-diff-check.mjs"
+    "check:core": "node ./scripts/core-diff-check.mjs",
+    "check:models": "node ./scripts/model-tiers-check.mjs"
   },
   "license": "MIT",
   "engines": {

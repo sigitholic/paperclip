@@ -26,6 +26,32 @@ describe("manifest", () => {
   });
 });
 
+describe("setup action", () => {
+  async function setupWith(routineAssignee: string) {
+    const h = await harness();
+    const calls: string[] = [];
+    const routine = (assigneeAgentId: string) => ({ routineId: "r1", routine: { id: "r1", assigneeAgentId }, status: "resolved" });
+    Object.assign(h.ctx.agents.managed, { reconcile: async () => ({ agentId: "noc-new", agent: { id: "noc-new" }, status: "created" }) });
+    Object.assign(h.ctx.routines.managed, {
+      reconcile: async () => { calls.push("reconcile"); return routine(routineAssignee); },
+      reset: async () => { calls.push("reset"); return routine("noc-new"); },
+    });
+    const out = await h.performAction<any>("setup", { companyId: COMPANY });
+    return { out, calls };
+  }
+
+  it("re-points the daily routine when the NOC agent was recreated", async () => {
+    const { out, calls } = await setupWith("noc-terminated");
+    expect(calls).toEqual(["reconcile", "reset"]);
+    expect(out.routine.routine.assigneeAgentId).toBe("noc-new");
+  });
+
+  it("leaves an already-linked routine alone", async () => {
+    const { calls } = await setupWith("noc-new");
+    expect(calls).toEqual(["reconcile"]);
+  });
+});
+
 describe("mock mode (no host configured)", () => {
   it("returns labeled fixture data and records the widget snapshot", async () => {
     const h = await harness();

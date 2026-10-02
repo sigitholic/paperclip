@@ -78,7 +78,11 @@ const plugin = definePlugin({
     ctx.actions.register("setup", async (params) => {
       const companyId = companyIdOf(params);
       const agent = await ctx.agents.managed.reconcile(NOC_AGENT_KEY, companyId);
-      const routine = await ctx.routines.managed.reconcile(DAILY_ROUTINE_KEY, companyId);
+      let routine = await ctx.routines.managed.reconcile(DAILY_ROUTINE_KEY, companyId);
+      // The routine outlives a terminated NOC agent and reconcile leaves its assignee alone.
+      if (agent.agentId && routine.routine && routine.routine.assigneeAgentId !== agent.agentId) {
+        routine = await ctx.routines.managed.reset(DAILY_ROUTINE_KEY, companyId);
+      }
       return { agent, routine };
     });
 
