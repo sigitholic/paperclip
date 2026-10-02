@@ -13,6 +13,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+# Windows defaults to Restricted, which blocks the .ps1 shims npm/corepack install (pnpm.ps1, npm.ps1).
+# Process scope needs no admin and does not change the machine setting.
+try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction Stop } catch { }
 $RepoUrl = "https://github.com/sigitholic/paperclip.git"
 $Branch = "starnet/main"
 
@@ -173,6 +176,8 @@ Use-StarnetShell
 $ErrorActionPreference = "Continue"
 & corepack enable --install-directory $StarnetBin
 $ErrorActionPreference = "Stop"
+# Without the .ps1 shims PowerShell falls back to pnpm.cmd, which works under any execution policy.
+Get-ChildItem -Path $StarnetBin -Filter "*.ps1" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if (-not (($userPath -split ";") -contains $StarnetBin)) {
   [Environment]::SetEnvironmentVariable("Path", (@($StarnetBin, $userPath) | Where-Object { $_ }) -join ";", "User")
