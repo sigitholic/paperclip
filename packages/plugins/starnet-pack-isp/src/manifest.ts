@@ -5,8 +5,10 @@ import { tierTemplate } from "@starnet/pack-kit";
 export const PLUGIN_ID = "starnet.pack-isp";
 export const NOC_AGENT_KEY = "noc-engineer";
 export const NOC_LLM_AGENT_KEY = "noc-engineer-llm";
+export const NOC_QA_AGENT_KEY = "noc-qa";
 export const DAILY_ROUTINE_KEY = "daily-pppoe-check";
 const NOC_LLM_TIER = tierTemplate("standard");
+const NOC_QA_TIER = tierTemplate("standard");
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required });
 
@@ -88,6 +90,30 @@ customer CPE devices.
 - If a tool result says MOCK mode, state clearly that the data is not from a live device.
 - Reply in the requester's language (usually Indonesian). Keep answers short: the numbers, what is
   abnormal, and the suggested next step.
+- Your issues may have a QA review stage. Post your answer as a comment and mark the issue done as
+  usual: Paperclip then hands it to the QA reviewer. Never change an issue's executionPolicy.
+`;
+
+const NOC_QA_INSTRUCTIONS = `# QA NOC (Starnet ISP pack)
+
+You are the QA reviewer of a Starnet ISP office. You receive NOC issues in review after the NOC
+engineer has answered. You verify; you do not redo the work.
+
+- Read the issue and the NOC engineer's last comment. Check every number and claim against the
+  starnet.pack-isp read-only tools (and starnet.pack-nms if granted), with as few calls as needed:
+    node "${PACK_TOOL_CLI}" list
+    node "${PACK_TOOL_CLI}" mikrotik.list_pppoe_active limit=50
+    node "${PACK_TOOL_CLI}" mikrotik.system_resource
+    node "${PACK_TOOL_CLI}" genieacs.list_devices
+  Live counts move a little between reads; a small drift (a few sessions or CPE) is fine.
+- Approve when the answer matches the data, answers the question, says MOCK when the data is mock,
+  and flags the abnormal thresholds (router unreachable, CPU > 80%, memory > 85%, offline CPE > 10%).
+  Approve by setting the issue status to done with a comment that starts with "QA OK:" and lists the
+  values you checked.
+- Otherwise request changes: set the issue status to in_progress with a comment that starts with
+  "QA REVISI:" and says exactly what is wrong or missing. Paperclip returns it to the NOC engineer.
+- Every decision needs a comment. Never change an issue's executionPolicy or assignee yourself.
+- All tools are read-only; never change devices. Reply in Indonesian.
 `;
 
 const manifest: PaperclipPluginManifestV1 = {
@@ -189,6 +215,22 @@ const manifest: PaperclipPluginManifestV1 = {
       permissions: { pluginTools: [PLUGIN_ID], canCreateAgents: false, canCreateSkills: false },
       budgetMonthlyCents: 0,
       instructions: { entryFile: "AGENTS.md", content: NOC_LLM_INSTRUCTIONS },
+    },
+    {
+      agentKey: NOC_QA_AGENT_KEY,
+      displayName: "QA NOC (LLM)",
+      role: "qa",
+      title: "QA reviewer for NOC answers (Starnet ISP pack)",
+      icon: "shield",
+      capabilities: "Reviews NOC Engineer answers against the Starnet ISP pack read-only tools and approves them or requests changes.",
+      // Becomes the review participant of NOC LLM issues through the 9router adapter's
+      // starnetQaReviewer setting (set by the board, e.g. the demo seed).
+      ...NOC_QA_TIER,
+      adapterConfig: { ...NOC_QA_TIER.adapterConfig, starnetMaxToolCalls: 15 },
+      runtimeConfig: { heartbeat: { enabled: false } },
+      permissions: { pluginTools: [PLUGIN_ID], canCreateAgents: false, canCreateSkills: false },
+      budgetMonthlyCents: 0,
+      instructions: { entryFile: "AGENTS.md", content: NOC_QA_INSTRUCTIONS },
     },
   ],
   routines: [

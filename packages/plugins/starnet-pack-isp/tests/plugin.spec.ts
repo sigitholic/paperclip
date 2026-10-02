@@ -62,7 +62,7 @@ describe("setup action", () => {
     Object.assign(h.ctx.agents.managed, {
       reconcile: async (key: string) => {
         calls.push(`agent:${key}`);
-        const id = key === "noc-engineer" ? "noc-new" : "noc-llm";
+        const id = key === "noc-engineer" ? "noc-new" : key === "noc-qa" ? "noc-qa" : "noc-llm";
         return { agentId: id, agent: { id }, status: "created" };
       },
     });
@@ -76,14 +76,15 @@ describe("setup action", () => {
 
   it("re-points the daily routine to the deterministic NOC when it was recreated", async () => {
     const { out, calls } = await setupWith("noc-terminated");
-    expect(calls).toEqual(["agent:noc-engineer", "agent:noc-engineer-llm", "reconcile", "reset"]);
+    expect(calls).toEqual(["agent:noc-engineer", "agent:noc-engineer-llm", "agent:noc-qa", "reconcile", "reset"]);
     expect(out.routine.routine.assigneeAgentId).toBe("noc-new");
     expect(out.llmAgent.agentId).toBe("noc-llm");
+    expect(out.qaAgent.agentId).toBe("noc-qa");
   });
 
   it("leaves an already-linked routine alone", async () => {
     const { calls } = await setupWith("noc-new");
-    expect(calls).toEqual(["agent:noc-engineer", "agent:noc-engineer-llm", "reconcile"]);
+    expect(calls).toEqual(["agent:noc-engineer", "agent:noc-engineer-llm", "agent:noc-qa", "reconcile"]);
   });
 });
 

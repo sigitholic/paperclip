@@ -44,7 +44,7 @@ adalah patch core **P-0** (bridge stream plugin, 4 file di `server/`) yang dicat
 - **Phase 3 (Tier model) — selesai:** tier template, `apply-tier`, `check:models`.
 - **Pack NMS (Zabbix + LibreNMS) — selesai:** `packages/plugins/starnet-pack-nms`, 3 tool read-only, webhook alert.
 - **Pack ISP — ditambah:** multi-MikroTik, RouterOS API transport (8728/8729), UI compact.
-- **Phase 2 — sebagian:** NOC Engineer (LLM) menjawab lewat tool gateway; konteks otomatis, batas loop, QA gate belum.
+- **Phase 2 — sebagian:** NOC Engineer (LLM) menjawab lewat tool gateway, dengan context pack Starnet Memory di setiap run, batas tool call/token per run, dan QA gate (issue baru `done` setelah disetujui agent QA NOC). Sandbox belum.
 - **Phase 4–6 — rencana:** pack OLT/billing + write tool di balik approval, agent factory/template, multi-tenant.
 
 Daftar patch core dan usulan PR upstream: [`STARNET_PATCHES.md`](../STARNET_PATCHES.md).
@@ -174,12 +174,14 @@ yang tercatat di registry service, jadi bisa saja tidak mengenai server yang sed
    di-build (langkah `build` di atas).
 2. **Buat company** "Starnet Demo" (prefix `STA`). Pakai `--company "Nama Lain"` untuk company lain,
    termasuk company yang sudah kamu buat di UI.
-3. **Setup pack ISP:** membuat agent **NOC Engineer** dan routine **Daily PPPoE check**, lalu mengecilkan
-   izin agent NOC (tidak bisa merekrut agent, membuat skill, atau assign task).
+3. **Setup pack ISP:** membuat agent **NOC Engineer**, **NOC Engineer (LLM)**, **QA NOC (LLM)** dan routine
+   **Daily PPPoE check**, mengecilkan izin agent-agent itu (tidak bisa merekrut agent, membuat skill, atau assign task),
+   dan menjadikan QA NOC reviewer QA untuk NOC LLM (`starnetQaReviewer`). Agent LLM baru masih `paused` tanpa model:
+   isi model lalu resume.
 4. **Langkah board (wajib): tool profile.** Tool gateway Paperclip *deny-by-default*: plugin tidak bisa
    memberi akses tool ke agent, harus board (manusia). Seed membuat tool profile
    **"Starnet NOC (read-only)"** (`defaultAction: deny`, hanya tool read-only `starnet.pack-isp:*` dan
-   `starnet.pack-nms:*`) dan mem-bind-nya ke kedua agent NOC. Tanpa langkah ini NOC Engineer tidak bisa memanggil tool apa pun.
+   `starnet.pack-nms:*`) dan mem-bind-nya ke agent NOC dan QA NOC. Tanpa langkah ini NOC Engineer tidak bisa memanggil tool apa pun.
 5. **Config pack:** mode mock (default) atau `--live` (ke server palsu di `127.0.0.1`).
 
 Mau melakukannya manual (tanpa seed)? Install plugin dengan CLI, lalu ikuti langkah "Setup" di

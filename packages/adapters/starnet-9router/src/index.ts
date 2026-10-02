@@ -51,6 +51,7 @@ import {
   resolveRunLimits,
   RunLimiter,
 } from "./run-limits.js";
+import { checkQaAfterRun, ensureQaStage, type IssueFetch, QA_BYPASS_ERROR_CODE, QA_REVIEWER_KEY, qaReviewer, type QaRequest } from "./qa-gate.js";
 
 export const ADAPTER_TYPE = NINEROUTER_ADAPTER_TYPE;
 export const BASE_URL_KEY = NINEROUTER_BASE_URL_KEY;
@@ -86,6 +87,7 @@ export function toCodexConfig(config: Record<string, unknown>): Record<string, u
     [MEMORY_CONFIG_KEY]: _memory,
     [MAX_TOOL_CALLS_KEY]: _maxToolCalls,
     [MAX_CONTEXT_TOKENS_KEY]: _maxContextTokens,
+    [QA_REVIEWER_KEY]: _qaReviewer,
     ...rest
   } = config;
   const gatewayEnv = codexGatewayEnv({ id: NINEROUTER_GATEWAY_ID, name: "9router", baseUrl, envKey: NINEROUTER_ENV_KEY });
@@ -239,6 +241,12 @@ export function getConfigSchema(): AdapterConfigSchema {
         default: DEFAULT_MAX_CONTEXT_TOKENS,
         hint: "Stop the run when the session context grows past this many tokens (0 = no limit).",
       },
+      {
+        key: QA_REVIEWER_KEY,
+        label: "QA reviewer agent id",
+        type: "text",
+        hint: "Agent id of the QA reviewer. Issues this agent works on get a review stage for it, so they are not done without QA approval. Empty = no QA gate.",
+      },
     ],
   };
 }
@@ -253,6 +261,7 @@ Fields:
 - ${MEMORY_CONFIG_KEY} (boolean, default true): inject the starnet.memory context pack for the run's issue into the prompt.
 - ${MAX_TOOL_CALLS_KEY} (number, default ${DEFAULT_MAX_TOOL_CALLS}, 0 = off): stop the run after this many tool calls; the run fails with errorCode starnet_run_limit.
 - ${MAX_CONTEXT_TOKENS_KEY} (number, default ${DEFAULT_MAX_CONTEXT_TOKENS}, 0 = off): stop the run when the session context exceeds this many tokens.
+- ${QA_REVIEWER_KEY} (agent id, optional): before each run, add a review stage for this agent to the run's issue; a run that leaves the issue done without that review approved fails with errorCode ${QA_BYPASS_ERROR_CODE}.
 - env.${NINEROUTER_ENV_KEY} (secret_ref, required): 9router API key bound to a company secret.
 - Other codex_local fields (instructionsFilePath, cwd, timeoutSec, modelReasoningEffort, ...) are passed through to the Codex ACP engine.
 
@@ -306,6 +315,47 @@ export async function executeWithRunLimits(
   return limiter.breach && !ctx.signal?.aborted ? limitedResult(result, limiter) : result;
 }
 
+/**
+ * Runs `run` behind the QA gate: ensures the reviewer's stage before the run and reports a failed
+ * run when the issue ends up done without that review approved. No-op without a reviewer.
+ */
+export async function executeWithQaGate(
+  ctx: AdapterExecutionContext,
+  run: (ctx: AdapterExecutionContext) => Promise<AdapterExecutionResult>,
+  fetchImpl?: IssueFetch,
+): Promise<AdapterExecutionResult> {
+  const reviewerAgentId = qaReviewer(ctx.config);
+  if (!reviewerAgentId) return run(ctx);
+  const req: QaRequest = {
+    apiUrl: apiBaseUrl(ctx.agent),
+    issueId: asString(ctx.context.issueId),
+    agentId: ctx.agent.id,
+    reviewerAgentId,
+    runId: ctx.runId,
+    authToken: ctx.authToken,
+    fetchImpl,
+  };
+  const ensured = await ensureQaStage(req);
+  await ctx.onLog(
+    "stdout",
+    ensured.attached ? `[starnet] QA gate: review stage added for reviewer ${reviewerAgentId}\n` : `[starnet] QA gate: ${ensured.reason}\n`,
+  );
+  const result = await run(ctx);
+  if (!req.issueId || reviewerAgentId === ctx.agent.id) return result;
+  const check = await checkQaAfterRun(req);
+  if (!check.bypassed) return result;
+  await ctx.onLog("stdout", `[starnet] QA gate bypassed: ${check.reason}\n`);
+  const resultJson = { ...(result.resultJson ?? {}), starnetQa: { bypassed: true, reason: check.reason, reviewerAgentId } };
+  if (result.errorCode) return { ...result, resultJson };
+  return {
+    ...result,
+    exitCode: result.exitCode && result.exitCode !== 0 ? result.exitCode : 1,
+    errorCode: QA_BYPASS_ERROR_CODE,
+    errorMessage: `Starnet QA gate: ${check.reason}`,
+    resultJson,
+  };
+}
+
 export function createServerAdapter(): ServerAdapterModule {
   return {
     type: ADAPTER_TYPE,
@@ -314,7 +364,9 @@ export function createServerAdapter(): ServerAdapterModule {
       const config = toCodexConfig(ctx.config);
       refreshCacheFromRun(ctx.config);
       const context = await injectMemoryContext(ctx);
-      return executeWithRunLimits({ ...ctx, context }, (limited) => codexExecute({ ...limited, config }));
+      return executeWithQaGate({ ...ctx, context }, (gated) =>
+        executeWithRunLimits(gated, (limited) => codexExecute({ ...limited, config })),
+      );
     },
     testEnvironment: (ctx) => testEnvironment(ctx),
     acp: { agentId: "codex", skillsMode: "ephemeral", prerequisites: { nodeRange: ">=24.11.0", packages: ["@agentclientprotocol/codex-acp"] } },

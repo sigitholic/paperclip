@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Seed (idempotently) a demo company on the local Paperclip instance:
 //   company "Starnet Demo" -> Starnet plugins installed/ready -> ISP pack `setup`
-//   (NOC Engineer, NOC Engineer (LLM), Daily PPPoE check) -> deny-by-default tool profile (ISP + NMS tools) bound to both NOCs
+//   (NOC Engineer, NOC Engineer (LLM), QA NOC (LLM), Daily PPPoE check) -> deny-by-default tool profile (ISP + NMS tools)
+//   bound to the NOC and QA agents -> NOC LLM gets QA NOC as its QA reviewer (starnetQaReviewer)
 //   -> pack config: mock (default) or --live (fake RouterOS/GenieACS on 127.0.0.1, see fake-servers).
 // Usage: node packages/starnet-devkit/scripts/demo-seed.mjs [--company "Starnet Demo"] [--live|--mock]
 // Talks REST only (PAPERCLIP_URL, default http://127.0.0.1:3100); never touches a database.
@@ -70,9 +71,10 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
   const setup = await api.action(ids["starnet.pack-isp"], "setup", companyId);
   const agentId = setup.agent?.agentId ?? setup.agent?.agent?.id;
   const llmAgentId = setup.llmAgent?.agentId ?? setup.llmAgent?.agent?.id ?? null;
+  const qaAgentId = setup.qaAgent?.agentId ?? setup.qaAgent?.agent?.id ?? null;
   const routineId = setup.routine?.routineId ?? setup.routine?.routine?.id ?? null;
   if (!agentId) throw new Error(`setup did not return the NOC agent: ${JSON.stringify(setup).slice(0, 200)}`);
-  const nocAgents = [agentId, ...(llmAgentId ? [llmAgentId] : [])];
+  const nocAgents = [agentId, ...(llmAgentId ? [llmAgentId] : []), ...(qaAgentId ? [qaAgentId] : [])];
 
   // 3b. Least privilege (board step): NOC agents must not hire agents, create skills or
   // assign tasks. Managed-agent reconcile does not update existing agents, so enforce it here.
@@ -85,7 +87,17 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
     }
   }
 
-  // 4. Board step: deny-by-default tool profile with the read-only pack tools, bound to both NOCs.
+  // 3c. QA gate: the NOC LLM's issues need QA NOC approval before they can close.
+  // Managed-agent reconcile does not update existing agents, so set the reviewer here.
+  if (llmAgentId && qaAgentId) {
+    const llm = await api.get(`/agents/${llmAgentId}`);
+    if (llm.adapterConfig?.starnetQaReviewer !== qaAgentId) {
+      await api.patch(`/agents/${llmAgentId}`, { adapterConfig: { starnetQaReviewer: qaAgentId } });
+      log(`${llm.name}: QA reviewer set to ${qaAgentId}`);
+    }
+  }
+
+  // 4. Board step: deny-by-default tool profile with the read-only pack tools, bound to the NOC and QA agents.
   const profiles = await api.get(`/companies/${companyId}/tools/profiles`);
   let profile = (Array.isArray(profiles) ? profiles : profiles.profiles ?? []).find((p) => p.profileKey === PROFILE_KEY);
   if (!profile) {
@@ -141,9 +153,9 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
     await api.post(`/plugins/${ids["starnet.pack-isp"]}/config`, { companyId, configJson: {} });
   }
 
-  const state = { companyId, companyName: company.name, issuePrefix: company.issuePrefix, plugins: ids, nocAgentId: agentId, nocLlmAgentId: llmAgentId, routineId, toolProfileId: profile.id, mode, fake, seededAt: new Date().toISOString() };
+  const state = { companyId, companyName: company.name, issuePrefix: company.issuePrefix, plugins: ids, nocAgentId: agentId, nocLlmAgentId: llmAgentId, nocQaAgentId: qaAgentId, routineId, toolProfileId: profile.id, mode, fake, seededAt: new Date().toISOString() };
   writeState(state);
-  log(`seeded ${company.name} [${company.issuePrefix}] mode=${mode}: noc=${agentId} noc-llm=${llmAgentId ?? "-"} profile=${profile.id} -> ${STATE_FILE}`);
+  log(`seeded ${company.name} [${company.issuePrefix}] mode=${mode}: noc=${agentId} noc-llm=${llmAgentId ?? "-"} qa=${qaAgentId ?? "-"} profile=${profile.id} -> ${STATE_FILE}`);
   return state;
 }
 

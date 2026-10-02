@@ -14,7 +14,7 @@ Paperclip yang sudah ditemui; perlu disetujui sebelum dikerjakan.
 |---|---|---|
 | 0 | Fondasi: pack ISP, Office Chat, Virtual Office, P-0, CI, devkit, sync | ✅ Selesai |
 | 1 | Starnet Memory | ✅ Selesai (1.1–1.4) |
-| 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | 🟡 Sebagian: NOC Engineer (LLM) menjawab lewat tool gateway (STAA-35); konteks tersuntik ✅ (STAA-52); batas langkah/token ✅ (STAA-53); QA gate belum |
+| 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | 🟡 Sebagian: NOC Engineer (LLM) menjawab lewat tool gateway (STAA-35); konteks tersuntik ✅ (STAA-52); batas langkah/token ✅ (STAA-53); QA gate ✅ (STAA-55); sandbox belum |
 | 3 | Tier model per agent (dilebur ke Fase 2) | ✅ Peta tier, skrip validasi, template bertier, `apply-tier` |
 | 4 | Pack OLT/billing + tool tulis di balik approval | ⬜ Rencana |
 | 5 | Agent factory / template office | ⬜ Rencana |
@@ -133,6 +133,35 @@ Temuan:
   agent jalan lagi.
 - Agent yang sudah ada tidak ikut berubah oleh template (reconcile core tidak memperbarui agent lama); set lewat
   `PATCH /api/agents/:id` (`adapterConfig` digabung) atau form adapter. `apply-tier` mempertahankan setelan ini.
+
+**2.3 QA gate — selesai 2 Okt 2026.** Dibangun di atas review stage core (`issue.executionPolicy`, Enforced
+Outcomes / Agent Reviews), tanpa perubahan core. Setelan adapter `starnetQaReviewer` (id agent reviewer) membuat
+adapter `starnet_9router`, sebelum run, menambahkan stage `review` dengan reviewer itu ke issue run bila belum ada
+(`maxReviewRounds` 2). Syaratnya: issue di-assign ke agent ini dan statusnya belum `in_review`/`done`/`cancelled`.
+Setelah itu core yang menegakkan: saat executor menandai `done`, issue pindah ke `in_review` dan di-assign ke reviewer;
+reviewer menyetujui dengan `done` + komentar, atau meminta revisi dengan status lain + komentar (issue kembali ke
+executor). Setelah 2 ronde agent, review naik ke manusia.
+
+Celah core: agent boleh mengubah `executionPolicy` issue-nya sendiri, jadi executor bisa menghapus stage lalu menutup
+issue dalam satu PATCH, dan SDK plugin tidak bisa mengatur `executionPolicy`. Karena itu adapter memeriksa issue setelah
+run: bila `done` tanpa stage reviewer di `executionState.completedStageIds`, run dilaporkan `failed` dengan
+`errorCode: starnet_qa_bypassed` dan `resultJson.starnetQa`, sehingga bypass terlihat di riwayat run. Instruksi agent
+juga melarang mengubah `executionPolicy`. Pemeriksaan ini mendeteksi, tidak mencegah; usulan upstream ada di
+`STARNET_PATCHES.md`.
+
+Reviewer: agent baru **QA NOC (LLM)** (`noc-qa`, role `qa`) dari pack-isp, tier standard, `starnetMaxToolCalls` 15,
+heartbeat mati, profil tool read-only yang sama dengan NOC. Ia memverifikasi ulang dengan tool, lalu berkomentar
+`QA OK: …` (setuju) atau `QA REVISI: …` (revisi). Seed demo membuat agent ini, mengikat profil tool, dan mengisi
+`starnetQaReviewer` NOC LLM. Agent yang baru dibuat masih `paused` tanpa model; isi model (`apply-tier` atau form) lalu
+resume.
+
+Bukti STAA-55 (NOC LLM → QA NOC, keduanya `cx/gpt-6-luna`): log run executor `[starnet] QA gate: review stage added
+for reviewer 2521a682…`; NOC berkomentar "Terdaftar 1 router MikroTik: default" lalu menandai selesai; issue pindah ke
+`in_review` (assignee QA NOC, `executionState.status: pending`); QA NOC memanggil `mikrotik.list_routers` sendiri,
+berkomentar "QA OK: … Jumlah dan nama sesuai komentar NOC", dan issue menjadi `done` dengan stage tercatat selesai.
+Seluruh alur sekitar 80 detik. Catatan: core membatalkan run executor (`issue_reassigned`) saat issue berpindah ke
+reviewer; itu perilaku normal dan tidak dihitung bypass. Prototipe manual STAA-54 (reviewer Kepala Kantor, model combo
+`peperclip` macet) dibatalkan.
 
 Kriteria selesai usulan:
 
@@ -275,10 +304,10 @@ core, dan jangan bersaing dengan fitur yang sedang direncanakan upstream.
 
 **Fitur upstream yang sudah selesai (✅) dan dipakai Starnet:** plugin system (dasar semua paket Starnet), MCP Tool
 Gateway & Apps dan Secrets Manager (tool dan kredensial pack-isp), Scheduled Routines (routine NOC), Activity log,
-Self-healing runs (retry run yang gagal), dan alur hire agent (dipakai Kepala Kantor).
+Self-healing runs (retry run yang gagal), alur hire agent (dipakai Kepala Kantor), serta Enforced Outcomes dan
+Agent Reviews (review stage untuk QA gate Fase 2).
 
-**Fitur upstream selesai yang belum dipakai tapi relevan:** Enforced Outcomes dan Agent Reviews (QA gate Fase 2),
-Cloud / Sandbox agents (sandbox Fase 2), Agent evals (mutu NOC LLM), Deep Planning (rencana sebelum tool tulis
+**Fitur upstream selesai yang belum dipakai tapi relevan:** Cloud / Sandbox agents (sandbox Fase 2), Agent evals (mutu NOC LLM), Deep Planning (rencana sebelum tool tulis
 Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase lain).
 
 ## Pertanyaan terbuka
@@ -304,7 +333,7 @@ Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase
 - ~~Template agent Starnet memakai tier dari `@starnet/pack-kit` (Fase 3.3).~~ **Selesai 2 Okt** (`tierTemplate`, `apply-tier`).
 - ~~Catat `check:models` dan `apply-tier` di [06-pengembangan-lokal.md](./06-pengembangan-lokal.md).~~ **Selesai 2 Okt.**
 - ~~NOC LLM berikutnya: context pack `starnet.memory` di awal run.~~ **Selesai 2 Okt** (disuntik adapter
-  `starnet_9router`, STAA-52). ~~Batas loop/token per run.~~ **Selesai 2 Okt** (STAA-53). Berikutnya: QA gate.
+  `starnet_9router`, STAA-52). ~~Batas loop/token per run.~~ **Selesai 2 Okt** (STAA-53). ~~QA gate.~~ **Selesai 2 Okt** (STAA-55, agent QA NOC). Berikutnya di Fase 2: sandbox.
 - Kandidat PR upstream: managed MCP gateway untuk adapter eksternal yang membungkus Codex (saat ini hanya `codex_local`).
 - ~~Perbarui bagian "Status rencana" di `.github/README.md`.~~ **Selesai 2 Okt** (Memory, tier, Pack NMS, Pack ISP
   multi-router; tabel path memuat `starnet-pack-nms`).

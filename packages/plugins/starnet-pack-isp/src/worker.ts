@@ -1,6 +1,6 @@
 import { definePlugin, runWorker, type EnvSecretRefBinding, type PluginContext, type ToolResult, type ToolRunContext } from "@paperclipai/plugin-sdk";
 import { assertGatewayRisk, packResult } from "@starnet/pack-kit";
-import { DAILY_ROUTINE_KEY, NOC_AGENT_KEY, NOC_LLM_AGENT_KEY, TOOLS } from "./manifest.js";
+import { DAILY_ROUTINE_KEY, NOC_AGENT_KEY, NOC_LLM_AGENT_KEY, NOC_QA_AGENT_KEY, TOOLS } from "./manifest.js";
 import {
   deviceStatus,
   genieacsMode,
@@ -128,12 +128,13 @@ const plugin = definePlugin({
       const companyId = companyIdOf(params);
       const agent = await ctx.agents.managed.reconcile(NOC_AGENT_KEY, companyId);
       const llmAgent = await ctx.agents.managed.reconcile(NOC_LLM_AGENT_KEY, companyId);
+      const qaAgent = await ctx.agents.managed.reconcile(NOC_QA_AGENT_KEY, companyId);
       let routine = await ctx.routines.managed.reconcile(DAILY_ROUTINE_KEY, companyId);
       // The routine outlives a terminated NOC agent and reconcile leaves its assignee alone.
       if (agent.agentId && routine.routine && routine.routine.assigneeAgentId !== agent.agentId) {
         routine = await ctx.routines.managed.reset(DAILY_ROUTINE_KEY, companyId);
       }
-      return { agent, llmAgent, routine };
+      return { agent, llmAgent, qaAgent, routine };
     });
 
     ctx.actions.register("run-daily-check", async (params) => ctx.routines.managed.run(DAILY_ROUTINE_KEY, companyIdOf(params)));
