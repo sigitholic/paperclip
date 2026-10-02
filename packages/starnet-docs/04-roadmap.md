@@ -14,7 +14,7 @@ Paperclip yang sudah ditemui; perlu disetujui sebelum dikerjakan.
 |---|---|---|
 | 0 | Fondasi: pack ISP, Office Chat, Virtual Office, P-0, CI, devkit, sync | ✅ Selesai |
 | 1 | Starnet Memory | ✅ Selesai (1.1–1.4) |
-| 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | 🟡 Sebagian: NOC Engineer (LLM) menjawab lewat tool gateway (STAA-35); konteks tersuntik ✅ (STAA-52); batas loop dan QA gate belum |
+| 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | 🟡 Sebagian: NOC Engineer (LLM) menjawab lewat tool gateway (STAA-35); konteks tersuntik ✅ (STAA-52); batas langkah/token ✅ (STAA-53); QA gate belum |
 | 3 | Tier model per agent (dilebur ke Fase 2) | ✅ Peta tier, skrip validasi, template bertier, `apply-tier` |
 | 4 | Pack OLT/billing + tool tulis di balik approval | ⬜ Rencana |
 | 5 | Agent factory / template office | ⬜ Rencana |
@@ -102,6 +102,37 @@ untuk semua agent `starnet_9router` (NOC LLM, Kepala Kantor, CTO, Software Devel
 Bukti STAA-52 (NOC Engineer LLM, `cx/gpt-6-luna`): log run `[starnet] memory context injected: 682 chars (~171 tok),
 sections task+agent; naive history 2028 chars (~507 tok), saved 66.4%`; tanpa memanggil tool, agent mengutip bagian
 "Tugas" dan "Memori agen (run sebelumnya)" dari blok `<starnet-context>`.
+
+**2.1 Batas langkah dan token per run — selesai 2 Okt 2026.** Adapter `starnet_9router` membaca event Codex ACP di log
+run: tool call awal (`acpx.tool_call` bertag `tool_call`) dihitung sebagai langkah, dan `acpx.status`/`usage_update`
+(`used`) sebagai ukuran konteks sesi. Saat batas pertama terlewati, adapter menulis satu baris log alasan lalu
+membatalkan run lewat sinyal yang digabung dengan sinyal stop operator; engine membatalkan turn secara kooperatif dan
+memaksa berhenti setelah `graceSec`. Run dilaporkan `failed` dengan `errorCode: starnet_run_limit` dan
+`resultJson.starnetRunLimit`; penanda stop operator (`executionCancellation`) dan bukti replay (`executionRecovery`)
+dibuang supaya core tidak menganggapnya Stop atau me-replay run.
+
+| Setelan adapter | Default | Catatan |
+|---|---|---|
+| `starnetMaxToolCalls` | 60 | NOC LLM dari template pack-isp: 20 (jawaban NOC butuh 3–6 tool call). 0 = mati |
+| `starnetMaxContextTokens` | 200 000 | Jendela konteks `cx/gpt-6-luna` 258 400. 0 = mati |
+
+Bukti STAA-53 dengan batas sementara 1: run berhenti di tool call ke-2 (`failed`, `starnet_run_limit`,
+`Starnet run limit: 2 tool calls exceeds the limit of 1`); core tidak me-retry (`replay: not_authorized`) dan
+memindahkan issue ke `blocked`. Setelah batas dikembalikan ke 20 dan board merekonsiliasi, run ulang sukses dan issue
+`done`. Context pack run ulang memuat bagian `handoff` dari run yang dihentikan.
+
+Temuan:
+
+- Batas ini **bukan pengaman tool tulis.** Model mengirim beberapa tool call paralel; tiga dimulai dalam 30 ms setelah
+  batas terpicu dan dua di antaranya selesai lewat gateway sebelum turn berhenti. Untuk Fase 4, pengaman tool tulis
+  tetap approval gate (`require_approval`), bukan batas langkah.
+- Run yang dihentikan dengan tool call yang hasilnya belum pasti diblokir core sampai board merekonsiliasi
+  (`execution_reconciliation_required`): lewat UI recovery issue atau
+  `POST /api/issues/:id/recovery-actions/resolve` dengan `executionReconciliation` (run id, `actionOutcome`, bukti).
+  Mengubah status issue saja tidak cukup. Ini justru jalur eskalasi yang diinginkan: manusia memutuskan sebelum
+  agent jalan lagi.
+- Agent yang sudah ada tidak ikut berubah oleh template (reconcile core tidak memperbarui agent lama); set lewat
+  `PATCH /api/agents/:id` (`adapterConfig` digabung) atau form adapter. `apply-tier` mempertahankan setelan ini.
 
 Kriteria selesai usulan:
 
@@ -273,7 +304,7 @@ Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase
 - ~~Template agent Starnet memakai tier dari `@starnet/pack-kit` (Fase 3.3).~~ **Selesai 2 Okt** (`tierTemplate`, `apply-tier`).
 - ~~Catat `check:models` dan `apply-tier` di [06-pengembangan-lokal.md](./06-pengembangan-lokal.md).~~ **Selesai 2 Okt.**
 - ~~NOC LLM berikutnya: context pack `starnet.memory` di awal run.~~ **Selesai 2 Okt** (disuntik adapter
-  `starnet_9router`, STAA-52). Berikutnya: batas loop/token per run, lalu QA gate.
+  `starnet_9router`, STAA-52). ~~Batas loop/token per run.~~ **Selesai 2 Okt** (STAA-53). Berikutnya: QA gate.
 - Kandidat PR upstream: managed MCP gateway untuk adapter eksternal yang membungkus Codex (saat ini hanya `codex_local`).
 - ~~Perbarui bagian "Status rencana" di `.github/README.md`.~~ **Selesai 2 Okt** (Memory, tier, Pack NMS, Pack ISP
   multi-router; tabel path memuat `starnet-pack-nms`).

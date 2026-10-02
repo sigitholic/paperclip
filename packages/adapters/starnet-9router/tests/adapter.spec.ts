@@ -22,11 +22,13 @@ describe("toCodexConfig", () => {
       engine: "cli",
       starnetTier: "standard",
       starnetMemory: false,
+      starnetMaxToolCalls: 10,
+      starnetMaxContextTokens: 1000,
       env: { NINEROUTER_API_KEY: "sk-1", OTHER: "y" },
     });
-    expect(out).not.toHaveProperty("ninerouterBaseUrl");
-    expect(out).not.toHaveProperty("starnetTier");
-    expect(out).not.toHaveProperty("starnetMemory");
+    for (const key of ["ninerouterBaseUrl", "starnetTier", "starnetMemory", "starnetMaxToolCalls", "starnetMaxContextTokens"]) {
+      expect(out).not.toHaveProperty(key);
+    }
     expect(out).toMatchObject({ model: "my-combo", instructionsFilePath: "/x/AGENTS.md", engine: "acp" });
     const env = out.env as Record<string, string>;
     expect(env).toMatchObject({ NINEROUTER_API_KEY: "sk-1", OTHER: "y", MODEL_PROVIDER: "ninerouter" });
@@ -89,7 +91,7 @@ describe("adapter module", () => {
   it("exposes the type, the settings schema and the codex skill hooks", () => {
     const mod = createServerAdapter();
     expect(mod.type).toBe("starnet_9router");
-    expect(getConfigSchema().fields.map((f) => f.key)).toEqual(["ninerouterBaseUrl", "model", "starnetMemory"]);
+    expect(getConfigSchema().fields.map((f) => f.key)).toEqual(["ninerouterBaseUrl", "model", "starnetMemory", "starnetMaxToolCalls", "starnetMaxContextTokens"]);
     expect(typeof mod.syncSkills).toBe("function");
     expect(mod.supportsInstructionsBundle).toBe(true);
   });

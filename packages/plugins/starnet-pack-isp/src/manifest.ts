@@ -6,6 +6,7 @@ export const PLUGIN_ID = "starnet.pack-isp";
 export const NOC_AGENT_KEY = "noc-engineer";
 export const NOC_LLM_AGENT_KEY = "noc-engineer-llm";
 export const DAILY_ROUTINE_KEY = "daily-pppoe-check";
+const NOC_LLM_TIER = tierTemplate("standard");
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required });
 
@@ -181,7 +182,9 @@ const manifest: PaperclipPluginManifestV1 = {
       capabilities: "Answers NOC questions about PPPoE sessions, router health and CPE status using the Starnet ISP pack read-only tools.",
       // Model and gateway are per company: run `pnpm --filter @starnet/devkit apply-tier` to fill
       // them in and resume the agent. The deterministic NOC above keeps the daily routine.
-      ...tierTemplate("standard"),
+      ...NOC_LLM_TIER,
+      // A NOC answer takes 3-6 tool calls; stop runaway loops well before the adapter default (60).
+      adapterConfig: { ...NOC_LLM_TIER.adapterConfig, starnetMaxToolCalls: 20 },
       runtimeConfig: { heartbeat: { enabled: false } },
       permissions: { pluginTools: [PLUGIN_ID], canCreateAgents: false, canCreateSkills: false },
       budgetMonthlyCents: 0,

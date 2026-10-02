@@ -21,6 +21,7 @@ import type {
   AdapterEnvironmentTestContext,
   AdapterEnvironmentTestResult,
   AdapterExecutionContext,
+  AdapterExecutionResult,
   AdapterModel,
   ServerAdapterModule,
 } from "@paperclipai/adapter-utils";
@@ -40,6 +41,16 @@ import {
   TIER_CONFIG_KEY,
 } from "@starnet/pack-kit";
 import { apiBaseUrl, describePack, fetchContextPack, MEMORY_CONFIG_KEY, memoryEnabled, type MemoryFetch, withContextPack } from "./memory-context.js";
+import {
+  DEFAULT_MAX_CONTEXT_TOKENS,
+  DEFAULT_MAX_TOOL_CALLS,
+  describeBreach,
+  limitedResult,
+  MAX_CONTEXT_TOKENS_KEY,
+  MAX_TOOL_CALLS_KEY,
+  resolveRunLimits,
+  RunLimiter,
+} from "./run-limits.js";
 
 export const ADAPTER_TYPE = NINEROUTER_ADAPTER_TYPE;
 export const BASE_URL_KEY = NINEROUTER_BASE_URL_KEY;
@@ -69,7 +80,14 @@ export function resolveBaseUrl(config: Record<string, unknown>): string {
 /** Codex adapter config that routes the ACP session through 9router. */
 export function toCodexConfig(config: Record<string, unknown>): Record<string, unknown> {
   const baseUrl = resolveBaseUrl(config);
-  const { [BASE_URL_KEY]: _url, [TIER_CONFIG_KEY]: _tier, [MEMORY_CONFIG_KEY]: _memory, ...rest } = config;
+  const {
+    [BASE_URL_KEY]: _url,
+    [TIER_CONFIG_KEY]: _tier,
+    [MEMORY_CONFIG_KEY]: _memory,
+    [MAX_TOOL_CALLS_KEY]: _maxToolCalls,
+    [MAX_CONTEXT_TOKENS_KEY]: _maxContextTokens,
+    ...rest
+  } = config;
   const gatewayEnv = codexGatewayEnv({ id: NINEROUTER_GATEWAY_ID, name: "9router", baseUrl, envKey: NINEROUTER_ENV_KEY });
   return { ...rest, engine: "acp", env: { ...asRecord(config.env), ...gatewayEnv } };
 }
@@ -207,6 +225,20 @@ export function getConfigSchema(): AdapterConfigSchema {
         default: true,
         hint: "Prepend the curated <starnet-context> pack from the starnet.memory plugin to every run on an issue. Skipped when the plugin is missing.",
       },
+      {
+        key: MAX_TOOL_CALLS_KEY,
+        label: "Max tool calls per run",
+        type: "number",
+        default: DEFAULT_MAX_TOOL_CALLS,
+        hint: "Stop the run when the agent starts more tool calls than this (0 = no limit).",
+      },
+      {
+        key: MAX_CONTEXT_TOKENS_KEY,
+        label: "Max context tokens per run",
+        type: "number",
+        default: DEFAULT_MAX_CONTEXT_TOKENS,
+        hint: "Stop the run when the session context grows past this many tokens (0 = no limit).",
+      },
     ],
   };
 }
@@ -219,6 +251,8 @@ Fields:
 - ${BASE_URL_KEY} (string, required): 9router base URL; "/v1" is appended when missing. Falls back to server env NINEROUTER_BASE_URL.
 - model (string, required): 9router model id or combo name.
 - ${MEMORY_CONFIG_KEY} (boolean, default true): inject the starnet.memory context pack for the run's issue into the prompt.
+- ${MAX_TOOL_CALLS_KEY} (number, default ${DEFAULT_MAX_TOOL_CALLS}, 0 = off): stop the run after this many tool calls; the run fails with errorCode starnet_run_limit.
+- ${MAX_CONTEXT_TOKENS_KEY} (number, default ${DEFAULT_MAX_CONTEXT_TOKENS}, 0 = off): stop the run when the session context exceeds this many tokens.
 - env.${NINEROUTER_ENV_KEY} (secret_ref, required): 9router API key bound to a company secret.
 - Other codex_local fields (instructionsFilePath, cwd, timeoutSec, modelReasoningEffort, ...) are passed through to the Codex ACP engine.
 
@@ -246,6 +280,32 @@ export async function injectMemoryContext(ctx: AdapterExecutionContext, fetchImp
   return withContextPack(ctx.context, result.pack);
 }
 
+/**
+ * Runs `run` with the Starnet step/token limiter on the run log. On the first breach it logs the
+ * reason and aborts through a signal combined with the operator's, then reports a failed result.
+ */
+export async function executeWithRunLimits(
+  ctx: AdapterExecutionContext,
+  run: (ctx: AdapterExecutionContext) => Promise<AdapterExecutionResult>,
+): Promise<AdapterExecutionResult> {
+  const limiter = new RunLimiter(resolveRunLimits(ctx.config));
+  const { maxToolCalls, maxContextTokens } = limiter.limits;
+  if (maxToolCalls === 0 && maxContextTokens === 0) return run(ctx);
+  const controller = new AbortController();
+  const signal = ctx.signal ? AbortSignal.any([ctx.signal, controller.signal]) : controller.signal;
+  const onLog: AdapterExecutionContext["onLog"] = async (stream, chunk) => {
+    await ctx.onLog(stream, chunk);
+    if (stream !== "stdout" || controller.signal.aborted) return;
+    const breach = limiter.observe(chunk);
+    if (!breach) return;
+    const message = describeBreach(breach);
+    await ctx.onLog("stdout", `[starnet] ${message}; stopping the run\n`);
+    controller.abort(new Error(message));
+  };
+  const result = await run({ ...ctx, signal, onLog });
+  return limiter.breach && !ctx.signal?.aborted ? limitedResult(result, limiter) : result;
+}
+
 export function createServerAdapter(): ServerAdapterModule {
   return {
     type: ADAPTER_TYPE,
@@ -254,7 +314,7 @@ export function createServerAdapter(): ServerAdapterModule {
       const config = toCodexConfig(ctx.config);
       refreshCacheFromRun(ctx.config);
       const context = await injectMemoryContext(ctx);
-      return codexExecute({ ...ctx, config, context });
+      return executeWithRunLimits({ ...ctx, context }, (limited) => codexExecute({ ...limited, config }));
     },
     testEnvironment: (ctx) => testEnvironment(ctx),
     acp: { agentId: "codex", skillsMode: "ephemeral", prerequisites: { nodeRange: ">=24.11.0", packages: ["@agentclientprotocol/codex-acp"] } },
