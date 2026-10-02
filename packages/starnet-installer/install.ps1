@@ -66,8 +66,9 @@ function Sync-Repo([string]$Dir) {
   if (-not (Test-Path (Join-Path $Dir ".git"))) {
     # Shallow: the full upstream history is large and not needed to run or update (git pull works).
     Write-Host "    ..  Clone $RepoUrl ($Branch) ke $Dir" -ForegroundColor Gray
-    & git clone --depth 1 --branch $Branch $RepoUrl $Dir
+    & git -c core.autocrlf=false clone --depth 1 --branch $Branch $RepoUrl $Dir
     if ($LASTEXITCODE -ne 0) { throw "git clone gagal. Cek koneksi internet." }
+    & git -C $Dir config core.autocrlf false
     return
   }
   # The local Windows patches are re-applied after the update.
@@ -77,6 +78,14 @@ function Sync-Repo([string]$Dir) {
     Write-Host "    !!  Ada perubahan lokal di repo, update (git pull) dilewati:" -ForegroundColor Yellow
     $dirty | ForEach-Object { Write-Host "        $_" -ForegroundColor Yellow }
     return
+  }
+  # Git for Windows defaults to core.autocrlf=true, which checks text out as CRLF. Upstream build checks compare
+  # generated files byte for byte ("Generated PRP schema modules are stale"), so the checkout must stay LF.
+  if (((& git -C $Dir config --local core.autocrlf) -join "") -ne "false") {
+    Write-Host "    ..  Menyetel akhir baris file ke LF (sekali saja)" -ForegroundColor Gray
+    & git -C $Dir config core.autocrlf false
+    & git -C $Dir rm -r -q --cached .
+    & git -C $Dir reset -q --hard
   }
   & git -C $Dir pull --ff-only
   if ($LASTEXITCODE -ne 0) { Write-Host "    !!  git pull gagal; lanjut dengan versi yang ada." -ForegroundColor Yellow }

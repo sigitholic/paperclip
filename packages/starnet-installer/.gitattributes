@@ -1,0 +1,2 @@
+# cmd.exe batch files need CRLF; the installer checks the repo out with core.autocrlf=false (LF everywhere else).
+*.cmd text eol=crlf
