@@ -84,13 +84,15 @@ if (demoDelayMs > 0) {
 }
 
 const r = res.data.resource;
+// `devices` is only the first page (limit); count offline from the totals.
 const offline = cpe.data.devices.filter((d) => !d.online);
+const offlineCount = cpe.data.total - cpe.data.online;
 // Drill into the first offline CPE (exercises genieacs.device_status).
 const firstOffline = offline[0] ? await tool("genieacs.device_status", { deviceId: offline[0].id }) : null;
 const alerts = [
   r.cpuLoadPct > 80 && `router CPU ${r.cpuLoadPct}%`,
   r.memUsedPct > 85 && `router memory ${r.memUsedPct}%`,
-  cpe.data.total && offline.length / cpe.data.total > 0.1 && `${offline.length} CPE offline`,
+  cpe.data.total && offlineCount / cpe.data.total > 0.1 && `${offlineCount} CPE offline (${((offlineCount / cpe.data.total) * 100).toFixed(1)}%)`,
 ].filter(Boolean);
 const mockSources = [...new Set([[pppoe, "mikrotik"], [res, "mikrotik"], [cpe, "genieacs"]].filter(([x]) => x.content.startsWith("[MOCK")).map(([, s]) => s))];
 const summary = [
@@ -100,7 +102,7 @@ const summary = [
   "",
   `- Active PPPoE sessions: **${pppoe.data.total}**`,
   `- Router ${r.board} ${r.version}: CPU **${r.cpuLoadPct}%**, memory **${r.memUsedPct}%**, uptime ${r.uptime}`,
-  `- CPE online: **${cpe.data.online}/${cpe.data.total}**${offline.length ? ` (offline: ${offline.slice(0, 5).map((d) => d.serial).join(", ")}${offline.length > 5 ? ", …" : ""})` : ""}`,
+  `- CPE online: **${cpe.data.online}/${cpe.data.total}**${offline.length ? ` (offline ${offlineCount}: ${offline.slice(0, 5).map((d) => d.serial).join(", ")}${offlineCount > 5 ? ", …" : ""})` : ""}`,
   ...(firstOffline ? [`- First offline CPE: ${firstOffline.content}`] : []),
   `- Alerts: ${alerts.length ? alerts.join("; ") : "none"}`,
   ...(memoryPins.length ? ["", "Catatan board yang dipakai (Starnet Memory):", ...memoryPins.slice(0, 5).map((p) => `- ${p}`)] : []),

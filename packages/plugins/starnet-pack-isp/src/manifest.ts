@@ -94,8 +94,14 @@ const manifest: PaperclipPluginManifestV1 = {
     type: "object",
     properties: {
       mikrotikHost: { type: "string", description: "RouterOS host/IP. Leave empty for MOCK mode." },
-      mikrotikPort: { type: "number", description: "REST port (default 443 with TLS, 80 without)." },
-      mikrotikUseTls: { type: "boolean", default: true },
+      mikrotikProtocol: {
+        type: "string",
+        enum: ["api", "rest"],
+        description: "api = RouterOS API (8728, or 8729 API-SSL). rest = REST over www/www-ssl (RouterOS 7). Default: api when the port is 8728/8729, otherwise rest.",
+      },
+      mikrotikPort: { type: "number", description: "8728 = API, 8729 = API-SSL, 80/443 = REST. Default 443 (REST) or 8728/8729 (API)." },
+      mikrotikUseTls: { type: "boolean", description: "TLS for ports other than 8728/8729 (REST default on, API default off). Ignored on 8728 (plain) and 8729 (TLS)." },
+      mikrotikTlsVerify: { type: "boolean", default: true, description: "Verify the router certificate on API-SSL. Turn off only for a self-signed certificate on a trusted network." },
       mikrotikUsername: { type: "string" },
       mikrotikPassword: { format: "secret-ref", description: "Company secret (value is a { type: \"secret_ref\", secretId } binding)." },
       genieacsBaseUrl: { type: "string", description: "GenieACS NBI URL, e.g. http://acs:7557. Leave empty for MOCK mode." },

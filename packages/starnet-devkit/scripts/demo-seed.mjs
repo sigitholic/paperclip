@@ -96,10 +96,17 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
     }
   }
 
-  // 5. Pack config: mock (no hosts) or live against the fake servers.
+  // 5. Pack config: mock (no hosts) or live against the fake servers. Without an explicit
+  // --live/--mock, a config the operator already saved (e.g. real devices) is left alone.
+  const configPath = `/plugins/${ids["starnet.pack-isp"]}/config?companyId=${companyId}`;
+  const current = await api.get(configPath).catch(() => null);
+  const operatorConfig = !mode && Object.keys(current?.configJson ?? {}).length > 0;
   mode = mode ?? prev?.mode ?? "mock";
   let fake = null;
-  if (mode === "live") {
+  if (operatorConfig) {
+    mode = "operator";
+    log("pack-isp config already set for this company; leaving it unchanged (pass --live or --mock to overwrite)");
+  } else if (mode === "live") {
     const reuse = prev?.companyId === companyId && prev?.fake?.routerosPassword && prev?.fake?.secretId;
     fake = reuse ? prev.fake : { ...FAKE, routerosPassword: randomBytes(18).toString("base64url") };
     if (!reuse) {

@@ -3,8 +3,8 @@
 The first Starnet "pack", built as a plain Paperclip plugin with **zero core edits**. It includes:
 
 - **4 read-only tools**, called by agents through the Paperclip tool gateway as `starnet.pack-isp:<name>`:
-  - `mikrotik.list_pppoe_active` — RouterOS REST `GET /rest/ppp/active`, filtered to `service=pppoe`
-  - `mikrotik.system_resource` — RouterOS REST `GET /rest/system/resource`
+  - `mikrotik.list_pppoe_active` — RouterOS `/ppp/active` (API `print` or REST `GET /rest/ppp/active`), filtered to `service=pppoe`
+  - `mikrotik.system_resource` — RouterOS `/system/resource` (API `print` or REST `GET /rest/system/resource`)
   - `genieacs.list_devices` — GenieACS NBI `GET /devices/?query=…&projection=…`
   - `genieacs.device_status` — GenieACS NBI, filtered by `_id`
 - **NOC Engineer**: a plugin-managed agent. It uses the `process` adapter to run `agent/noc-check.mjs`, a deterministic script that needs no LLM. Swap in an LLM adapter later; the tools stay the same.
@@ -24,7 +24,10 @@ Set the config with `POST /api/plugins/:pluginId/config` `{ companyId, configJso
 
 | key | meaning |
 | --- | --- |
-| `mikrotikHost`, `mikrotikPort`, `mikrotikUseTls` (default `true`), `mikrotikUsername` | RouterOS REST endpoint (RouterOS ≥ 7.1). Use a read-only RouterOS user group. |
+| `mikrotikHost`, `mikrotikPort`, `mikrotikUsername` | RouterOS endpoint. Use a read-only RouterOS user group. |
+| `mikrotikProtocol` | `api` = RouterOS API (`/ip service` `api` 8728 or `api-ssl` 8729, RouterOS ≥ 6.43). `rest` = REST over `www`/`www-ssl` (RouterOS ≥ 7.1). Default: `api` when the port is 8728/8729, otherwise `rest`. |
+| `mikrotikUseTls` | Only for non-standard ports. REST defaults to TLS, API to plain. Port 8728 is always plain and 8729 always TLS. |
+| `mikrotikTlsVerify` (default `true`) | Verify the API-SSL certificate. Turn off only for a self-signed certificate on a trusted network. |
 | `mikrotikPassword` | **secret-ref**: `{ "type": "secret_ref", "secretId": "<company secret id>" }` |
 | `genieacsBaseUrl`, `genieacsUsername` | NBI URL, e.g. `http://acs:7557` |
 | `genieacsPassword` | **secret-ref** (optional) |
@@ -36,7 +39,11 @@ How secrets are handled:
 - The host binds the secret to this plugin at that `configPath`.
 - The worker resolves the secret on every call with `ctx.secrets.resolve(ref, { companyId, configPath })`. It never stores or logs the value.
 
-TLS limitation: Node `fetch` rejects self-signed RouterOS certificates. Use a CA-signed or internal-CA certificate trusted with `NODE_EXTRA_CA_CERTS`, or plain HTTP on a management VLAN only.
+Transport notes:
+
+- **API 8728 sends the password in clear text.** Use it only over a management VLAN or VPN, and restrict `/ip service set api address=<paperclip host>`. Prefer `api-ssl` 8729 with a certificate.
+- REST: Node `fetch` rejects self-signed RouterOS certificates. Use a CA-signed or internal-CA certificate trusted with `NODE_EXTRA_CA_CERTS`, or plain HTTP on a management VLAN only.
+- `api-ssl` without any certificate (anonymous DH) is not supported by Node; assign a certificate to the service.
 
 ## Setup (once per company)
 

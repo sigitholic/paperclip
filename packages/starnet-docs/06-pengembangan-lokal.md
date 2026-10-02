@@ -121,10 +121,15 @@ Patch ini hilang kalau file itu di-reset atau ditimpa `git pull`.
 
 Ringkasnya (detail di README Starnet dan README pack-isp):
 
-1. Di RouterOS, buat user khusus dengan group **read-only** dan aktifkan REST API (RouterOS ≥ 7.1).
+1. Di RouterOS, buat user khusus dengan group **read-only**. Transport yang didukung:
+   - **RouterOS API** (`/ip service` `api` 8728 / `api-ssl` 8729, RouterOS ≥ 6.43): cocok bila `www`/`www-ssl`
+     dimatikan. Port 8728 mengirim password tanpa enkripsi, jadi batasi `address=` service ke host Paperclip dan
+     pakai hanya di VLAN manajemen/VPN.
+   - **REST** (`www`/`www-ssl`, RouterOS ≥ 7.1).
 2. Simpan password sebagai company secret (**Company Settings → Secrets**).
-3. Isi config plugin **Starnet ISP Pack** (host, port, TLS, username, secret untuk password, URL GenieACS).
-4. Sertifikat self-signed ditolak Node: pakai CA internal (`NODE_EXTRA_CA_CERTS`) atau HTTP biasa hanya di VLAN
-   manajemen.
+3. Isi config plugin **Starnet ISP Pack** (host, protokol, port, username, secret untuk password, URL GenieACS).
+   Port 8728/8729 otomatis memilih protokol API.
+4. Sertifikat self-signed ditolak Node: pakai CA internal (`NODE_EXTRA_CA_CERTS`), matikan `mikrotikTlsVerify`
+   (API-SSL, hanya di jaringan tepercaya), atau transport tanpa TLS hanya di VLAN manajemen.
 
 Sumber yang host-nya kosong tetap mock.
