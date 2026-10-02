@@ -6,10 +6,11 @@
   "description": "Starnet developer kit: patch bookkeeping checks, upstream sync, demo seed, fake device servers and E2E against a local Paperclip instance.",
   "scripts": {
     "seed": "node ./scripts/demo-seed.mjs",
+    "release-bundle": "node ./scripts/release-bundle.mjs",
     "fake-servers": "node ./scripts/fake-servers.mjs",
     "e2e": "vitest run --config ./vitest.config.mjs e2e",
     "test": "vitest run --config ./vitest.config.mjs tests",
-    "typecheck": "node --check ./scripts/core-diff-check.mjs && node --check ./scripts/demo-seed.mjs && node --check ./scripts/fake-servers.mjs && node --check ./scripts/model-tiers-check.mjs && node --check ./scripts/apply-tier.mjs && node --check ./lib/model-probe.mjs && node --check ./lib/tier-cli.mjs && bash -n ./scripts/upstream-sync.sh",
+    "typecheck": "node --check ./scripts/core-diff-check.mjs && node --check ./scripts/demo-seed.mjs && node --check ./scripts/release-bundle.mjs && node --check ./scripts/fake-servers.mjs && node --check ./scripts/model-tiers-check.mjs && node --check ./scripts/apply-tier.mjs && node --check ./lib/model-probe.mjs && node --check ./lib/tier-cli.mjs && bash -n ./scripts/upstream-sync.sh",
     "build": "node -e \"\"",
     "check:core": "node ./scripts/core-diff-check.mjs",
     "check:models": "node ./scripts/model-tiers-check.mjs",
@@ -20,6 +21,7 @@
     "node": ">=24.11.0"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "vitest": "^4.1.11"
   }
 }

@@ -1,0 +1,74 @@
+# Starnet bundle release: builds the prebuilt Starnet plugins + the bundled starnet_9router adapter
+# (packages/starnet-devkit/scripts/release-bundle.mjs) and publishes them as the rolling GitHub Release
+# `starnet-bundle`. The light Windows installer (packages/starnet-installer/install.ps1) downloads
+# starnet-bundle.zip from that release, so users never build from source.
+name: starnet-release
+
+on:
+  push:
+    branches: ["starnet/main"]
+    paths:
+      - "packages/plugins/starnet-*/**"
+      - "packages/adapters/starnet-*/**"
+      - "packages/starnet-devkit/scripts/release-bundle.mjs"
+      - "packages/starnet-devkit/scripts/demo-seed.mjs"
+      - ".github/workflows/starnet-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: starnet-release
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    if: github.repository == 'sigitholic/paperclip'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ""
+      RELEASE_TAG: starnet-bundle
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build plugin SDK (and its workspace deps)
+        run: pnpm --filter "@paperclipai/plugin-sdk..." build
+
+      - name: Build Starnet plugins
+        run: pnpm --filter "./packages/plugins/starnet-*" --workspace-concurrency=1 run build
+
+      - name: Assemble bundle
+        run: |
+          node packages/starnet-devkit/scripts/release-bundle.mjs --out dist/starnet-bundle
+          (cd dist/starnet-bundle && zip -qr ../starnet-bundle.zip .)
+          ls -la dist/starnet-bundle.zip
+          cat dist/starnet-bundle/bundle.json
+
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f "$RELEASE_TAG"
+          git push -f origin "refs/tags/$RELEASE_TAG"
+          notes="Prebuilt Starnet plugins + starnet_9router adapter for the light Windows installer. Commit ${GITHUB_SHA::9}."
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --notes "$notes" --prerelease
+          else
+            gh release create "$RELEASE_TAG" --title "Starnet bundle" --notes "$notes" --prerelease
+          fi
+          gh release upload "$RELEASE_TAG" dist/starnet-bundle.zip dist/starnet-bundle/bundle.json --clobber

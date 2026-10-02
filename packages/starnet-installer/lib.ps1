@@ -1,4 +1,4 @@
-# Shared helpers for the Starnet Windows installer (install.ps1) and launcher (start.ps1).
+# Shared helpers for the Starnet developer installer (install-dev.ps1) and launcher (start-dev.ps1).
 # Windows PowerShell 5.1 compatible; keep this file ASCII-only (5.1 reads BOM-less files as ANSI).
 
 $script:StarnetHome = Join-Path $HOME ".starnet"

@@ -25,7 +25,7 @@ Branch utama fork: **`starnet/main`** (default branch). Kerja baru lewat PR ke b
 | `packages/plugins/starnet-office-templates/` | Starnet | Halaman Install Office: pasang Network/ISP, Software, Marketing, atau Finance Office sekali klik lewat API import core (agent dijeda, tanpa izin tool). [README](../packages/plugins/starnet-office-templates/README.md) |
 | `packages/plugins/starnet-pack-nms/` | Starnet | Plugin NMS: 3 tool read-only (`nms.list_sources`, `nms.list_problems`, `nms.host_status`) untuk Zabbix + LibreNMS, webhook alert → issue NOC, widget dashboard. [README](../packages/plugins/starnet-pack-nms/README.md) |
 | `packages/plugins/starnet-pack-kit/` | Starnet | Helper bersama untuk pack Starnet (`fetchJson`, `tierTemplate`, `qualifyTool`). |
-| `packages/starnet-installer/` | Starnet | Installer Windows satu langkah (`install.ps1`/`install.cmd`) dan launcher harian (`start.ps1`/`start.cmd`). Lihat [Install cepat (Windows)](#install-cepat-windows). |
+| `packages/starnet-installer/` | Starnet | Installer Windows ringan (`install.ps1`/`install.cmd`, paket jadi) dengan launcher `start.ps1`, plus installer developer dari source (`install-dev.ps1`, `start-dev.ps1`). Lihat [Install cepat (Windows)](#install-cepat-windows). |
 | `packages/starnet-devkit/` | Starnet | Seed demo, server palsu RouterOS/GenieACS, E2E, skrip sync upstream, guard "no core edits", `check:models`, `apply-tier`. [README](../packages/starnet-devkit/README.md) |
 | `packages/plugins/starnet-memory/` | Starnet | Plugin Starnet Memory: L1 per issue/agent, pin, context pack untuk agent, halaman Memory. |
 | `packages/starnet-memory-core/` | Starnet | Logika Starnet Memory (Phase 1, library murni). [README](../packages/starnet-memory-core/README.md) |
@@ -57,13 +57,47 @@ Riwayat per langkah: [PR yang sudah di-merge](https://github.com/sigitholic/pape
 
 ## Install cepat (Windows)
 
-Buka **PowerShell** (tidak perlu Git Bash, tidak perlu WSL), tempel satu baris ini, lalu Enter:
+Buka **PowerShell**, tempel satu baris ini, lalu Enter:
 
 ```powershell
 irm https://raw.githubusercontent.com/sigitholic/paperclip/starnet/main/packages/starnet-installer/install.ps1 | iex
 ```
 
-Installer mengerjakan semua langkah [Windows manual](#windows-tanpa-wsl) sendiri dan melewati yang sudah ada:
+Jalankan di PowerShell biasa (jangan **Run as administrator**). Tidak perlu Git, Docker, Rust, Build Tools, atau
+WSL. Semua masuk ke `%LOCALAPPDATA%\StarnetOffice`:
+
+1. Node.js 24 portable (zip resmi nodejs.org, dicek SHA-256), khusus Starnet, tidak mengubah PATH.
+2. Paperclip dari paket npm `paperclipai` (sudah jadi, database Postgres bawaan). Versinya dikunci sesuai paket
+   Starnet.
+3. Paket Starnet sudah jadi (6 plugin + adapter `starnet_9router`) dari GitHub Release
+   [`starnet-bundle`](https://github.com/sigitholic/paperclip/releases/tag/starnet-bundle), dibuat otomatis oleh CI
+   (`.github/workflows/starnet-release.yml`, `packages/starnet-devkit/scripts/release-bundle.mjs`).
+4. Shortcut **Starnet Office** di desktop.
+
+Dobel-klik **Starnet Office** untuk menyalakan. Start pertama menyiapkan database (sekitar 3-5 menit), lalu
+launcher memasang plugin dan adapter Starnet lewat API lokal dan membuka <http://127.0.0.1:3100>. Tutup jendelanya
+untuk mematikan. Update: jalankan baris di atas lagi (tutup Starnet dulu).
+
+Catatan:
+
+- Butuh sekitar **4 GB** kosong. Data tersimpan di `%LOCALAPPDATA%\StarnetOffice\data`, terpisah dari
+  `~/.paperclip`, jadi install lama dari source tidak tersentuh.
+- Database bawaan tidak bisa jalan sebagai Administrator. Kalau UAC Windows dimatikan (semua program jadi
+  Administrator), installer memakai Postgres di Docker (container `starnet-office-pg`, port 54331) bila Docker
+  Desktop ada; kalau tidak, installer meminta UAC dinyalakan.
+- Folder lain: `$env:STARNET_HOME = "D:\StarnetOffice"` sebelum menjalankan baris di atas.
+- Belum termasuk di paket npm: patch core P-0 (stream bridge), jadi Virtual Office dan Office Chat memakai polling.
+
+### Install developer (build dari source)
+
+Untuk mengubah kode Starnet. Butuh sekitar **15 GB** dan 30-60 menit:
+
+```powershell
+irm https://raw.githubusercontent.com/sigitholic/paperclip/starnet/main/packages/starnet-installer/install-dev.ps1 | iex
+```
+
+Installer developer mengerjakan semua langkah [Windows manual](#windows-tanpa-wsl) sendiri dan melewati yang sudah
+ada:
 
 1. Memasang yang belum ada lewat `winget`: Git, Node.js 24+, Visual Studio Build Tools (C++), Rust, dan
    Docker Desktop. Klik **Yes** kalau Windows meminta izin.
@@ -76,7 +110,7 @@ Installer mengerjakan semua langkah [Windows manual](#windows-tanpa-wsl) sendiri
    Windows untuk worker plugin (`STARNET_PATCHES.md` #7). Keduanya tidak di-commit.
 6. `onboard` sekali (config + secret instance), lalu membuat shortcut **Starnet Office** di desktop.
 
-Sehari-hari cukup dobel-klik **Starnet Office** di desktop. Shortcut itu menyalakan Docker, Postgres, dan
+Sehari-hari cukup dobel-klik **Starnet Office** di desktop (`start-dev.cmd`). Shortcut itu menyalakan Docker, Postgres, dan
 server, mengisi company demo (aman diulang), lalu membuka <http://127.0.0.1:3100>. Start pertama butuh
 5-10 menit (compile Rust). Untuk mematikan, tutup jendelanya.
 
@@ -86,8 +120,8 @@ Catatan:
 - Kalau Docker Desktop baru terpasang, installer berhenti dan meminta restart Windows. Buka Docker Desktop
   sekali (terima syaratnya), lalu jalankan baris di atas lagi. Installer melanjutkan dari langkah terakhir.
 - Folder lain: `$env:STARNET_DIR = "D:\starnet"` sebelum menjalankan baris di atas.
-- Update ke versi terbaru: jalankan installer lagi (`git pull`, install, build).
-- Dari folder clone: dobel-klik `packages\starnet-installer\install.cmd`.
+- Update ke versi terbaru: jalankan installer developer lagi (`git pull`, install, build).
+- Dari folder clone: dobel-klik `packages\starnet-installer\install-dev.cmd`.
 
 ## Prasyarat
 
