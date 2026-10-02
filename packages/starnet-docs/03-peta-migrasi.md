@@ -41,6 +41,7 @@ satu per satu, jadi tiap baris "Core" perlu dicoba sebelum dianggap final.
 | Approval hanya untuk HIGH/CRITICAL | ADR-002 | Tool policy `require_approval` per `risk_level` | 🟦 Core (risiko ditebak dari nama tool) |
 | Connector MikroTik (read) | ADR-003 | `starnet.pack-isp`: `mikrotik.list_pppoe_active`, `mikrotik.system_resource` | ✅ Selesai |
 | Connector GenieACS (read) | ADR-003 | `starnet.pack-isp`: `genieacs.list_devices`, `genieacs.device_status` | ✅ Selesai |
+| Monitoring NMS (Zabbix, LibreNMS) | — | `starnet.pack-nms`: `nms.list_problems`, `nms.host_status`, webhook alert → issue NOC | ✅ Selesai (uji live NMS menunggu URL/token) |
 | Connector OLT (ZTE) | ADR-003 | Pack OLT | ⬜ Rencana (Fase 4) |
 | Tool tulis ke perangkat (di balik approval) | ADR-002, ADR-011 | Tool dengan kata kerja tulis + profile terpisah + `require_approval` + `allowWrites` | ⬜ Rencana (Fase 4) |
 | Kredensial terenkripsi, `secretRef` | Langkah 21 | Company secret + secret-ref | ✅ Selesai (dipakai pack-isp) |

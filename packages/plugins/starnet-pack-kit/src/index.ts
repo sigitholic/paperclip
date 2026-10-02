@@ -34,19 +34,29 @@ export function assertGatewayRisk(toolName: string, expected: GatewayRisk): void
 export interface FetchJsonOptions {
   headers?: Record<string, string>;
   timeoutMs?: number;
+  /** POST sends `body` as JSON (e.g. JSON-RPC). Default GET. */
+  method?: "GET" | "POST";
+  body?: unknown;
 }
 
-/** GET a JSON document. Errors never include headers (credentials) or response bodies. */
+/** Fetch a JSON document. Errors never include headers (credentials) or request/response bodies. */
 export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions = {}): Promise<T> {
   const timeoutMs = opts.timeoutMs ?? 8000;
+  const method = opts.method ?? "GET";
+  const where = `${method} ${new URL(url).origin}${new URL(url).pathname}`;
   let res: Response;
   try {
-    res = await fetch(url, { headers: { accept: "application/json", ...opts.headers }, signal: AbortSignal.timeout(timeoutMs) });
+    res = await fetch(url, {
+      method,
+      headers: { accept: "application/json", ...(method === "POST" ? { "content-type": "application/json" } : {}), ...opts.headers },
+      body: method === "POST" ? JSON.stringify(opts.body ?? {}) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
   } catch (err) {
     const reason = err instanceof Error && err.name === "TimeoutError" ? `timeout after ${timeoutMs}ms` : "network error";
-    throw new Error(`GET ${new URL(url).origin}${new URL(url).pathname} failed: ${reason}`);
+    throw new Error(`${where} failed: ${reason}`);
   }
-  if (!res.ok) throw new Error(`GET ${new URL(url).origin}${new URL(url).pathname} failed: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`${where} failed: HTTP ${res.status}`);
   return (await res.json()) as T;
 }
 

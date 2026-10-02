@@ -7,8 +7,13 @@
 //
 // Usage: node pack-tool.mjs list
 //        node pack-tool.mjs <tool> [key=value ...]     e.g. mikrotik.list_pppoe_active limit=50
+//        node pack-tool.mjs starnet.pack-nms:nms.list_problems minSeverity=high   (other Starnet packs)
 // key=value avoids JSON quoting, which PowerShell mangles; a single JSON object argument also works.
 const PACK = "starnet.pack-isp:";
+const STARNET = "starnet.";
+
+/** Short names belong to the ISP pack; other Starnet packs use their full `plugin:tool` name. */
+export const qualifyTool = (name) => (name.includes(":") ? name : PACK + name);
 const { PAPERCLIP_API_URL, PAPERCLIP_API_KEY, PAPERCLIP_RUN_ID, PAPERCLIP_TASK_ID } = process.env;
 
 function fail(message) {
@@ -59,12 +64,12 @@ async function main([name, ...rawParams]) {
   const gw = { "x-paperclip-tool-gateway-token": session.token };
   if (name === "list") {
     const tools = await call("GET", "/tool-gateway/tools", null, gw);
-    const pack = (Array.isArray(tools) ? tools : tools?.tools ?? []).filter((t) => t.name.startsWith(PACK));
-    for (const t of pack) console.log(`${t.name.slice(PACK.length)}  ${t.description ?? ""}`);
-    if (!pack.length) fail("no starnet.pack-isp tools are granted to this agent");
+    const pack = (Array.isArray(tools) ? tools : tools?.tools ?? []).filter((t) => t.name.startsWith(STARNET));
+    for (const t of pack) console.log(`${t.name.startsWith(PACK) ? t.name.slice(PACK.length) : t.name}  ${t.description ?? ""}`);
+    if (!pack.length) fail("no Starnet pack tools are granted to this agent");
     return;
   }
-  const result = unwrapToolResult(await call("POST", "/tool-gateway/tools/call", { tool: PACK + name.replace(PACK, ""), parameters }, gw));
+  const result = unwrapToolResult(await call("POST", "/tool-gateway/tools/call", { tool: qualifyTool(name), parameters }, gw));
   if (result?.error) return fail(`${name}: ${result.error}`);
   if (result?.content) console.log(result.content);
   if (result?.data !== undefined) console.log(JSON.stringify(result.data, null, 2));

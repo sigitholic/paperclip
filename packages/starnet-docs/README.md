@@ -35,7 +35,7 @@ berikutnya adalah runtime adapter Starnet (Fase 2).
 
 - [`.github/README.md`](../../.github/README.md): README Starnet di halaman depan GitHub (quickstart, cara pakai).
 - [`STARNET_PATCHES.md`](../../STARNET_PATCHES.md): daftar patch core (hanya P-0) dan kandidat PR upstream.
-- README tiap paket: [pack-isp](../plugins/starnet-pack-isp/README.md), [office-chat](../plugins/starnet-office-chat/README.md),
+- README tiap paket: [pack-isp](../plugins/starnet-pack-isp/README.md), [pack-nms](../plugins/starnet-pack-nms/README.md), [office-chat](../plugins/starnet-office-chat/README.md),
   [virtual-office](../plugins/starnet-virtual-office/README.md), [memory](../plugins/starnet-memory/README.md),
   [memory-core](../starnet-memory-core/README.md), [devkit](../starnet-devkit/README.md).
 - Dokumentasi Paperclip upstream: [`doc/PRODUCT.md`](../../doc/PRODUCT.md), [`doc/SPEC-implementation.md`](../../doc/SPEC-implementation.md),

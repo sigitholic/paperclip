@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Seed (idempotently) a demo company on the local Paperclip instance:
 //   company "Starnet Demo" -> Starnet plugins installed/ready -> ISP pack `setup`
-//   (NOC Engineer, NOC Engineer (LLM), Daily PPPoE check) -> deny-by-default tool profile bound to both NOCs
+//   (NOC Engineer, NOC Engineer (LLM), Daily PPPoE check) -> deny-by-default tool profile (ISP + NMS tools) bound to both NOCs
 //   -> pack config: mock (default) or --live (fake RouterOS/GenieACS on 127.0.0.1, see fake-servers).
 // Usage: node packages/starnet-devkit/scripts/demo-seed.mjs [--company "Starnet Demo"] [--live|--mock]
 // Talks REST only (PAPERCLIP_URL, default http://127.0.0.1:3100); never touches a database.
@@ -18,6 +18,7 @@ export const PLUGINS = {
   "starnet.office-chat": "packages/plugins/starnet-office-chat",
   "starnet.virtual-office": "packages/plugins/starnet-virtual-office",
   "starnet.memory": "packages/plugins/starnet-memory",
+  "starnet.pack-nms": "packages/plugins/starnet-pack-nms",
 };
 export const ISP_TOOLS = [
   "mikrotik.list_routers",
@@ -26,6 +27,8 @@ export const ISP_TOOLS = [
   "genieacs.list_devices",
   "genieacs.device_status",
 ].map((t) => `starnet.pack-isp:${t}`);
+export const NMS_TOOLS = ["nms.list_sources", "nms.list_problems", "nms.host_status"].map((t) => `starnet.pack-nms:${t}`);
+const NOC_TOOLS = [...ISP_TOOLS, ...NMS_TOOLS];
 export const FAKE = { routerosPort: 18728, genieacsPort: 17557, routerosUser: "noc-ro" };
 const PROFILE_KEY = "starnet-noc-readonly";
 
@@ -89,13 +92,13 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
     profile = await api.post(`/companies/${companyId}/tools/profiles`, {
       profileKey: PROFILE_KEY,
       name: "Starnet NOC (read-only)",
-      description: "Allows only the read-only Starnet ISP pack tools.",
+      description: "Allows only the read-only Starnet ISP and NMS pack tools.",
       defaultAction: "deny",
-      entries: ISP_TOOLS.map((toolName) => ({ selectorType: "tool_name", effect: "include", toolName })),
+      entries: NOC_TOOLS.map((toolName) => ({ selectorType: "tool_name", effect: "include", toolName })),
     });
   } else {
     const granted = new Set((profile.entries ?? []).map((e) => e.toolName));
-    for (const toolName of ISP_TOOLS.filter((t) => !granted.has(t))) {
+    for (const toolName of NOC_TOOLS.filter((t) => !granted.has(t))) {
       await api.post(`/tool-profiles/${profile.id}/entries`, { selectorType: "tool_name", effect: "include", toolName });
       log(`tool profile: granted ${toolName}`);
     }

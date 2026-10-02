@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
 import { gatewayRisk } from "@starnet/pack-kit";
-import { parseParams, unwrapToolResult } from "../agent/pack-tool.mjs";
+import { parseParams, qualifyTool, unwrapToolResult } from "../agent/pack-tool.mjs";
 import manifest, { PLUGIN_ID, TOOLS } from "../src/manifest.js";
 import plugin from "../src/worker.js";
 
@@ -39,6 +39,12 @@ describe("manifest", () => {
     expect(parseParams(['{"limit":5}'])).toEqual({ limit: 5 });
     expect(parseParams([])).toEqual({});
     expect(() => parseParams(["limit"])).toThrow(/key=value/);
+  });
+
+  it("pack-tool qualifies short names to the ISP pack and keeps other packs' full names", () => {
+    expect(qualifyTool("mikrotik.list_routers")).toBe("starnet.pack-isp:mikrotik.list_routers");
+    expect(qualifyTool("starnet.pack-isp:genieacs.list_devices")).toBe("starnet.pack-isp:genieacs.list_devices");
+    expect(qualifyTool("starnet.pack-nms:nms.list_problems")).toBe("starnet.pack-nms:nms.list_problems");
   });
 
   it("pack-tool unwraps the gateway envelope down to the plugin result", () => {

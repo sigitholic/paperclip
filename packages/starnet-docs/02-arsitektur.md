@@ -23,6 +23,7 @@ flowchart TB
 
   subgraph Starnet["Plugin & paket Starnet"]
     ISP["starnet.pack-isp"]
+    NMS["starnet.pack-nms"]
     Chat["starnet.office-chat"]
     VO["starnet.virtual-office"]
     Mem["starnet.memory"]
@@ -31,16 +32,19 @@ flowchart TB
   end
 
   Devices["MikroTik RouterOS / GenieACS"]
+  NmsSrv["Zabbix / LibreNMS"]
 
   UI --> API
   API --> Issues & Agents & Gov
   Agents -->|tool call| Gateway
   Gateway -->|izin + risiko| PluginHost
-  PluginHost --> ISP & Chat & VO & Mem
+  PluginHost --> ISP & NMS & Chat & VO & Mem
   ISP --> Devices
+  NMS -->|API read-only| NmsSrv
+  NmsSrv -->|webhook alert| NMS
   Events --> PluginHost
   PluginHost -->|SSE| UI
-  ISP & Chat & VO -.-> Kit
+  ISP & NMS & Chat & VO -.-> Kit
   Mem -.-> MemCore
 ```
 
@@ -69,6 +73,7 @@ flowchart TB
 | Paket | Jenis | Isi |
 |---|---|---|
 | `packages/plugins/starnet-pack-isp` (`starnet.pack-isp`) | Plugin | 4 tool read-only (MikroTik, GenieACS), agent **NOC Engineer** (adapter `process`, skrip deterministik `agent/noc-check.mjs`, tanpa LLM), routine **Daily PPPoE check**, widget NOC status |
+| `packages/plugins/starnet-pack-nms` (`starnet.pack-nms`) | Plugin | 3 tool read-only Zabbix + LibreNMS (`nms.list_sources`, `nms.list_problems`, `nms.host_status`), webhook alert → issue NOC (dedupe, tutup otomatis saat pulih, batas per jam), halaman pengaturan, widget |
 | `packages/plugins/starnet-office-chat` (`starnet.office-chat`) | Plugin UI | Halaman chat company; permintaan jadi issue untuk agent yang tepat |
 | `packages/plugins/starnet-virtual-office` (`starnet.virtual-office`) | Plugin UI | Meja agent dengan status live, widget dashboard |
 | `packages/plugins/starnet-memory` (`starnet.memory`) | Plugin | Memory L1, pin, filter tulis, context pack, halaman Memori |

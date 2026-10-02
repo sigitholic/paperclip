@@ -171,6 +171,21 @@ tool gateway, lalu issue ditandai `done`.
 - Ganti provider atau paket = ubah satu peta tier.
 - `core-diff-check` tetap hijau (tidak ada file core yang berubah).
 
+## Pack NMS — Zabbix + LibreNMS (2 Okt 2026)
+
+Dibuat sebagai plugin `starnet.pack-nms`, bukan connector katalog Apps, karena connector Apps berarti mengubah
+`packages/shared` (core). Detail di [README pack-nms](../plugins/starnet-pack-nms/README.md).
+
+| Hasil | Bukti |
+|---|---|
+| 3 tool read-only (problem aktif, status host, daftar source), multi-source, satu source gagal tidak menjatuhkan yang lain | 18 test (server Zabbix JSON-RPC dan LibreNMS palsu); tool dipanggil lewat tool gateway di Starnet Demo |
+| Webhook alert → issue NOC: verifikasi HMAC (Zabbix) atau token (LibreNMS), dedupe, tutup otomatis saat pulih, filter severity, batas issue per jam | E2E di Starnet Demo: signature palsu ditolak, problem jadi STAA-49 (high), kiriman ulang tidak menggandakan, status pulih menutup STAA-49 |
+| NOC harian memuat bagian NMS bila tool NMS di-grant; data MOCK tidak dihitung sebagai alert | STAA-51 |
+| `fetchJson` pack-kit mendukung POST JSON (untuk JSON-RPC) | Test pack-kit |
+
+Belum: uji terhadap server Zabbix/LibreNMS nyata (butuh URL dan token read-only yang disimpan sebagai company secret),
+dan URL webhook publik untuk instance yang bisa dijangkau NMS.
+
 ## Fase 4 — Pack OLT/billing + tool tulis (usulan)
 
 **Syarat:** Fase 2 selesai, dan salah satu dari: field `risk` eksplisit diterima upstream (kandidat PR 1 di

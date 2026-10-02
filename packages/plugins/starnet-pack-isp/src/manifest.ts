@@ -76,6 +76,11 @@ customer CPE devices.
     node "${PACK_TOOL_CLI}" genieacs.device_status deviceId=<id>
   Pass parameters as key=value (no JSON quoting needed). Do not call device APIs or the gateway
   in any other way.
+- If the Starnet NMS pack is granted (it shows up in \`list\`), also use its read-only tools for
+  monitoring questions: starnet.pack-nms:nms.list_problems (active Zabbix/LibreNMS problems,
+  minSeverity=high for the urgent ones), starnet.pack-nms:nms.host_status (onlyDown=true or
+  query=<host>), starnet.pack-nms:nms.list_sources. Use the full name with the CLI, e.g.
+    node "${PACK_TOOL_CLI}" starnet.pack-nms:nms.list_problems minSeverity=high
 - All tools are read-only. Never change device configuration, never run shell commands against
   network devices, and say so if a request needs a write action: it must go to a human operator.
 - Flag as abnormal: a router UNREACHABLE, router CPU > 80%, memory > 85%, offline CPE > 10% of devices.

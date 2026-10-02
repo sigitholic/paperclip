@@ -65,7 +65,7 @@ if (memory) {
 }
 
 async function tool(name, parameters = {}) {
-  const out = await call("POST", "/tool-gateway/tools/call", { tool: PACK + name, parameters }, gw);
+  const out = await call("POST", "/tool-gateway/tools/call", { tool: name.includes(":") ? name : PACK + name, parameters }, gw);
   let result = out; // gateway envelope -> dispatcher envelope -> plugin ToolResult { content, data }
   while (result && !("data" in result) && !result.error && result.result) result = result.result;
   if (result?.error) throw new Error(`${name}: ${result.error}`);
@@ -78,12 +78,16 @@ async function safeTool(name, parameters) {
     return await tool(name, parameters);
   } catch (err) {
     console.log(`[noc] ${err.message}`);
-    return { error: err.message.replace(/^[\w.]+: /, "") };
+    return { error: err.message.replace(/^[\w.:-]+: /, "") };
   }
 }
 const pppoe = await safeTool("mikrotik.list_pppoe_active", { limit: 5 });
 const res = await safeTool("mikrotik.system_resource");
 const cpe = await safeTool("genieacs.list_devices", { limit: 100 });
+// Starnet NMS pack (optional): only when its tools are granted to this agent.
+const NMS_PROBLEMS = "starnet.pack-nms:nms.list_problems";
+const nms = allNames.includes(NMS_PROBLEMS) ? await safeTool(NMS_PROBLEMS, { minSeverity: "average", limit: 10 }) : null;
+const nmsMock = Boolean(nms?.content?.startsWith("[MOCK"));
 
 // Optional demo knob: keep the run open a bit so live UIs (Virtual Office) can be observed. Off by default.
 const demoDelayMs = Math.min(Number(process.env.NOC_DEMO_DELAY_MS ?? 0) || 0, 60000);
@@ -113,8 +117,13 @@ const alerts = [
   ]),
   cpe.error && `GenieACS: ${cpe.error}`,
   cpe.data?.total && offlineCount / cpe.data.total > 0.1 && `${offlineCount} CPE offline (${((offlineCount / cpe.data.total) * 100).toFixed(1)}%)`,
+  nms?.error && `NMS: ${nms.error}`,
+  ...(nmsMock ? [] : nms?.data?.problems ?? [])
+    .filter((p) => p.severity === "disaster" || p.severity === "high")
+    .slice(0, 5)
+    .map((p) => `NMS ${p.severity}: ${p.host} — ${p.name}`),
 ].filter(Boolean);
-const mockSources = [...new Set([[pppoe, "mikrotik"], [res, "mikrotik"], [cpe, "genieacs"]].filter(([x]) => x.content?.startsWith("[MOCK")).map(([, s]) => s))];
+const mockSources = [...new Set([[pppoe, "mikrotik"], [res, "mikrotik"], [cpe, "genieacs"], [nms ?? {}, "nms"]].filter(([x]) => x.content?.startsWith("[MOCK")).map(([, s]) => s))];
 const pppoeBreakdown = multi && pppoe.data?.routers ? ` (${pppoe.data.routers.map((x) => `${x.router} ${x.ok ? x.total : "?"}`).join(", ")})` : "";
 const summary = [
   `Hasil: PPPoE aktif ${pppoe.data?.total ?? "?"}, CPE online ${cpe.data ? `${cpe.data.online}/${cpe.data.total}` : "?"}, CPU${multi ? " maks" : ""} ${maxCpu ?? "?"}%, alert: ${alerts.length ? alerts.join("; ") : "tidak ada"}`,
@@ -131,6 +140,9 @@ const summary = [
     ? [`- CPE online: **${cpe.data.online}/${cpe.data.total}**${offline.length ? ` (offline ${offlineCount}: ${offline.slice(0, 5).map((d) => d.serial).join(", ")}${offlineCount > 5 ? ", …" : ""})` : ""}`]
     : []),
   ...(firstOffline?.content ? [`- First offline CPE: ${firstOffline.content}`] : []),
+  ...(nms?.data
+    ? [`- NMS problems (average+)${nmsMock ? " — MOCK, no NMS source configured" : ""}: **${nms.data.total}**${nms.data.problems.length ? ` — ${nms.data.problems.slice(0, 5).map((p) => `${p.host}: ${p.name} [${p.severity}]`).join("; ")}${nms.data.total > 5 ? "; …" : ""}` : ""}`]
+    : []),
   `- Alerts: ${alerts.length ? alerts.join("; ") : "none"}`,
   ...(memoryPins.length ? ["", "Catatan board yang dipakai (Starnet Memory):", ...memoryPins.slice(0, 5).map((p) => `- ${p}`)] : []),
   ...(memory
