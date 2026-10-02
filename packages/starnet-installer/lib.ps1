@@ -160,6 +160,27 @@ function Start-StarnetPostgres([int]$TimeoutSec = 120) {
   Stop-Starnet "Postgres belum siap setelah $TimeoutSec detik. Cek: docker logs $name"
 }
 
+# Same call as the failing upstream postinstall (scripts/link-plugin-dev-sdk.mjs): a directory symlink. Windows
+# only allows it for admins or with Developer Mode on.
+function Test-DirSymlinkAllowed {
+  $probe = Join-Path $env:TEMP ("starnet-symlink-" + [guid]::NewGuid().ToString("N"))
+  $ErrorActionPreference = "Continue"
+  & node -e "const fs=require('fs');fs.symlinkSync('.',process.argv[1],'dir');fs.rmSync(process.argv[1],{force:true})" $probe *> $null
+  $ok = ($LASTEXITCODE -eq 0)
+  if (Test-Path $probe) { Remove-Item -Force $probe -ErrorAction SilentlyContinue }
+  return $ok
+}
+
+function Enable-DeveloperMode {
+  $regArgs = 'add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v AllowDevelopmentWithoutDevLicense /d 1'
+  try {
+    $p = Start-Process -FilePath "reg.exe" -ArgumentList $regArgs -Verb RunAs -Wait -PassThru -WindowStyle Hidden
+    return ($p.ExitCode -eq 0)
+  } catch {
+    return $false
+  }
+}
+
 function Test-PaperclipHealth {
   try {
     $r = Invoke-WebRequest -Uri "$($script:PaperclipUrl)/api/health" -UseBasicParsing -TimeoutSec 3

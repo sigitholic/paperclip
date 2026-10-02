@@ -71,7 +71,9 @@ Installer mengerjakan semua langkah [Windows manual](#windows-tanpa-wsl) sendiri
 3. Menyalakan Docker dan membuat database Postgres `paperclip-postgres` (port 5441).
 4. `pnpm install` (pnpm 9.15.4 lewat Corepack, script memakai Git Bash hanya untuk proses ini) dan build
    plugin Starnet.
-5. Memasang tambalan lokal Windows untuk worker plugin (lihat `STARNET_PATCHES.md` #7, tidak di-commit).
+5. Menyalakan Developer Mode Windows (sekali klik **Yes**) agar `pnpm install` boleh membuat symlink; kalau
+   ditolak, memakai junction sebagai tambalan lokal (`STARNET_PATCHES.md` #11). Lalu memasang tambalan lokal
+   Windows untuk worker plugin (`STARNET_PATCHES.md` #7). Keduanya tidak di-commit.
 6. `onboard` sekali (config + secret instance), lalu membuat shortcut **Starnet Office** di desktop.
 
 Sehari-hari cukup dobel-klik **Starnet Office** di desktop. Shortcut itu menyalakan Docker, Postgres, dan

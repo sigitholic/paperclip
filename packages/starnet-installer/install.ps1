@@ -59,6 +59,7 @@ function Resolve-RepoDir {
 }
 
 $WindowsPatchFile = "server\src\services\plugin-loader.ts"
+$SymlinkPatchFile = "scripts\link-plugin-dev-sdk.mjs"
 
 function Sync-Repo([string]$Dir) {
   $ErrorActionPreference = "Continue"
@@ -69,8 +70,8 @@ function Sync-Repo([string]$Dir) {
     if ($LASTEXITCODE -ne 0) { throw "git clone gagal. Cek koneksi internet." }
     return
   }
-  # The local Windows patch (see Set-WindowsPluginLoaderPatch) is re-applied after the update.
-  & git -C $Dir checkout -- $WindowsPatchFile 2>$null
+  # The local Windows patches are re-applied after the update.
+  & git -C $Dir checkout -- $WindowsPatchFile $SymlinkPatchFile 2>$null
   $dirty = & git -C $Dir status --porcelain --untracked-files=no
   if ($dirty) {
     Write-Host "    !!  Ada perubahan lokal di repo, update (git pull) dilewati:" -ForegroundColor Yellow
@@ -188,6 +189,27 @@ try {
   $pnpmVersion = (& pnpm -v) -join ""
   if ($LASTEXITCODE -ne 0) { Stop-Starnet "pnpm tidak bisa dijalankan lewat Corepack." }
   Write-Ok "pnpm $pnpmVersion (shell script: Git Bash)"
+
+  Write-Step "Izin symlink Windows"
+  if (Test-DirSymlinkAllowed) {
+    Write-Ok "Symlink diizinkan"
+  } else {
+    Write-Note "Menyalakan Developer Mode Windows agar pnpm bisa membuat symlink. Klik 'Yes' kalau Windows meminta izin."
+    if ((Enable-DeveloperMode) -and (Test-DirSymlinkAllowed)) {
+      Write-Ok "Developer Mode aktif"
+    } else {
+      # Fallback without admin: junctions need no privilege. Local change only, never committed (STARNET_PATCHES.md #11).
+      $linkPath = Join-Path $RepoDir $SymlinkPatchFile
+      $linkSource = [IO.File]::ReadAllText($linkPath)
+      $linkBefore = 'symlinkSync(relativeSdkDir, linkTarget, "dir");'
+      $linkAfter = 'symlinkSync(relativeSdkDir, linkTarget, process.platform === "win32" ? "junction" : "dir");'
+      if ($linkSource.Contains($linkAfter)) { Write-Ok "Tambalan junction sudah terpasang" }
+      elseif ($linkSource.Contains($linkBefore)) {
+        [IO.File]::WriteAllText($linkPath, $linkSource.Replace($linkBefore, $linkAfter), (New-Object Text.UTF8Encoding $false))
+        Write-Ok "Developer Mode tidak dinyalakan; pakai junction (perubahan lokal di $SymlinkPatchFile, jangan di-commit)"
+      } else { Write-Warn "Symlink tidak diizinkan dan baris yang ditambal tidak ditemukan; pnpm install mungkin gagal." }
+    }
+  }
 
   Write-Step "Install dependency (pnpm install, beberapa menit)"
   & pnpm install
