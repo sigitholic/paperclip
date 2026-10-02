@@ -4,7 +4,20 @@ import { routerOsQuery } from "./routeros-api.js";
 
 export type MikrotikProtocol = "api" | "rest";
 
+/** One extra router in `mikrotikRouters`. The flat `mikrotik*` fields are the router named "default". */
+export interface RouterConfig {
+  name?: string;
+  host?: string;
+  protocol?: MikrotikProtocol;
+  port?: number;
+  useTls?: boolean;
+  tlsVerify?: boolean;
+  username?: string;
+  password?: unknown; // secret_ref binding
+}
+
 export interface PackConfig {
+  mikrotikRouters?: RouterConfig[];
   mikrotikHost?: string;
   mikrotikProtocol?: MikrotikProtocol;
   mikrotikPort?: number;
@@ -20,12 +33,63 @@ export interface PackConfig {
 }
 export type ResolveSecret = (ref: unknown, configPath: string) => Promise<string>;
 
-export interface PppoeSession { name: string; address: string; callerId: string; uptime: string; service: string }
+export interface PppoeSession { router: string; name: string; address: string; callerId: string; uptime: string; service: string }
 export interface RouterResource { cpuLoadPct: number; memUsedPct: number; totalMemoryMb: number; uptime: string; version: string; board: string }
 export interface Device { id: string; serial: string; model: string; lastInform: string | null; online: boolean; firmware: string | null; pppoeUsername: string | null }
 
-export const mikrotikMode = (c: PackConfig): PackMode => (c.mikrotikHost?.trim() ? "live" : "mock");
+export const DEFAULT_ROUTER = "default";
+const MOCK_ROUTER = "mock";
+const ROUTER_CONCURRENCY = 4;
+
+/** A configured router plus the config path of its password (for secret resolution). */
+export interface MikrotikRouter extends RouterConfig {
+  name: string;
+  host: string;
+  passwordPath: string;
+}
+
+export type RouterOutcome<T> =
+  | { router: string; host: string; ok: true; value: T }
+  | { router: string; host: string; ok: false; error: string };
+
+/** Routers with a host, in config order: the flat fields first (as "default"), then `mikrotikRouters`. */
+export function mikrotikRouters(c: PackConfig): MikrotikRouter[] {
+  const routers: MikrotikRouter[] = [];
+  if (c.mikrotikHost?.trim()) {
+    routers.push({
+      name: DEFAULT_ROUTER,
+      host: c.mikrotikHost.trim(),
+      protocol: c.mikrotikProtocol,
+      port: c.mikrotikPort,
+      useTls: c.mikrotikUseTls,
+      tlsVerify: c.mikrotikTlsVerify,
+      username: c.mikrotikUsername,
+      password: c.mikrotikPassword,
+      passwordPath: "mikrotikPassword",
+    });
+  }
+  (c.mikrotikRouters ?? []).forEach((r, i) => {
+    if (!r?.host?.trim()) return;
+    routers.push({ ...r, name: r.name?.trim() || `router-${i + 1}`, host: r.host.trim(), passwordPath: `mikrotikRouters.${i}.password` });
+  });
+  const seen = new Set<string>();
+  for (const r of routers) {
+    if (seen.has(r.name)) throw new Error(`duplicate MikroTik router name "${r.name}"`);
+    seen.add(r.name);
+  }
+  return routers;
+}
+
+export const mikrotikMode = (c: PackConfig): PackMode => (mikrotikRouters(c).length ? "live" : "mock");
 export const genieacsMode = (c: PackConfig): PackMode => (c.genieacsBaseUrl?.trim() ? "live" : "mock");
+
+function selectRouters(c: PackConfig, name?: string): MikrotikRouter[] {
+  const routers = mikrotikRouters(c);
+  if (!name) return routers;
+  const router = routers.find((r) => r.name === name);
+  if (!router) throw new Error(`unknown router "${name}"; configured: ${routers.map((r) => r.name).join(", ") || "none"}`);
+  return [router];
+}
 
 const API_PORT = 8728;
 const API_SSL_PORT = 8729;
@@ -34,16 +98,16 @@ const API_SSL_PORT = 8729;
  * How to reach the router. The well-known API ports pick the API and its TLS mode, because
  * operators often disable www/www-ssl (REST) and expose only 8728/8729.
  */
-export function mikrotikEndpoint(c: PackConfig): { protocol: MikrotikProtocol; port: number; tls: boolean } {
-  const protocol = c.mikrotikProtocol ?? (c.mikrotikPort === API_PORT || c.mikrotikPort === API_SSL_PORT ? "api" : "rest");
+export function mikrotikEndpoint(r: Pick<RouterConfig, "protocol" | "port" | "useTls">): { protocol: MikrotikProtocol; port: number; tls: boolean } {
+  const protocol = r.protocol ?? (r.port === API_PORT || r.port === API_SSL_PORT ? "api" : "rest");
   switch (protocol) {
     case "api": {
-      const tls = c.mikrotikPort === API_PORT ? false : c.mikrotikPort === API_SSL_PORT ? true : (c.mikrotikUseTls ?? false);
-      return { protocol, port: c.mikrotikPort ?? (tls ? API_SSL_PORT : API_PORT), tls };
+      const tls = r.port === API_PORT ? false : r.port === API_SSL_PORT ? true : (r.useTls ?? false);
+      return { protocol, port: r.port ?? (tls ? API_SSL_PORT : API_PORT), tls };
     }
     case "rest": {
-      const tls = c.mikrotikUseTls ?? true;
-      return { protocol, port: c.mikrotikPort ?? (tls ? 443 : 80), tls };
+      const tls = r.useTls ?? true;
+      return { protocol, port: r.port ?? (tls ? 443 : 80), tls };
     }
     default: {
       const unknown: never = protocol;
@@ -53,49 +117,86 @@ export function mikrotikEndpoint(c: PackConfig): { protocol: MikrotikProtocol; p
 }
 
 /** Rows of one RouterOS menu (e.g. "/ppp/active"), as kebab-case string fields for both protocols. */
-async function mikrotikRows(c: PackConfig, menu: string, secret: ResolveSecret): Promise<Array<Record<string, string>>> {
-  const { protocol, port, tls } = mikrotikEndpoint(c);
-  const password = c.mikrotikPassword ? await secret(c.mikrotikPassword, "mikrotikPassword") : "";
-  const host = c.mikrotikHost!.trim();
+async function mikrotikRows(c: PackConfig, r: MikrotikRouter, menu: string, secret: ResolveSecret): Promise<Array<Record<string, string>>> {
+  const { protocol, port, tls } = mikrotikEndpoint(r);
+  const password = r.password ? await secret(r.password, r.passwordPath) : "";
   if (protocol === "api") {
     const [rows] = await routerOsQuery(
-      { host, port, tls, tlsVerify: c.mikrotikTlsVerify, username: c.mikrotikUsername ?? "", password, timeoutMs: c.timeoutMs },
+      { host: r.host, port, tls, tlsVerify: r.tlsVerify, username: r.username ?? "", password, timeoutMs: c.timeoutMs },
       [`${menu}/print`],
     );
     return rows ?? [];
   }
-  const body = await fetchJson<Array<Record<string, string>> | Record<string, string>>(`${tls ? "https" : "http"}://${host}:${port}/rest${menu}`, {
-    headers: basicAuth(c.mikrotikUsername ?? "", password),
+  const body = await fetchJson<Array<Record<string, string>> | Record<string, string>>(`${tls ? "https" : "http"}://${r.host}:${port}/rest${menu}`, {
+    headers: basicAuth(r.username ?? "", password),
     timeoutMs: c.timeoutMs,
   });
   return Array.isArray(body) ? body : [body];
 }
 
-export async function listPppoeActive(c: PackConfig, secret: ResolveSecret): Promise<{ mode: PackMode; sessions: PppoeSession[] }> {
-  if (mikrotikMode(c) === "mock") return { mode: "mock", sessions: mockPppoe() };
-  const rows = await mikrotikRows(c, "/ppp/active", secret);
-  const sessions = rows
-    .filter((r) => (r.service ?? "pppoe") === "pppoe")
-    .map((r) => ({ name: r.name ?? "", address: r.address ?? "", callerId: r["caller-id"] ?? "", uptime: r.uptime ?? "", service: r.service ?? "pppoe" }));
-  return { mode: "live", sessions };
+/** Run `fn` on each router with bounded concurrency; one router failing does not hide the others. */
+async function eachRouter<T>(routers: MikrotikRouter[], fn: (r: MikrotikRouter) => Promise<T>): Promise<RouterOutcome<T>[]> {
+  const out: RouterOutcome<T>[] = new Array(routers.length);
+  let next = 0;
+  async function worker() {
+    while (next < routers.length) {
+      const i = next++;
+      const r = routers[i]!;
+      try {
+        out[i] = { router: r.name, host: r.host, ok: true, value: await fn(r) };
+      } catch (err) {
+        out[i] = { router: r.name, host: r.host, ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(ROUTER_CONCURRENCY, routers.length) }, worker));
+  if (out.length && out.every((o) => !o.ok)) {
+    throw new Error(out.map((o) => `${o.router}: ${o.ok ? "" : o.error}`).join("; "));
+  }
+  return out;
 }
 
-export async function systemResource(c: PackConfig, secret: ResolveSecret): Promise<{ mode: PackMode; resource: RouterResource }> {
-  if (mikrotikMode(c) === "mock") return { mode: "mock", resource: mockResource() };
-  const r = (await mikrotikRows(c, "/system/resource", secret))[0] ?? {};
-  const total = Number(r["total-memory"] ?? 0);
-  const free = Number(r["free-memory"] ?? 0);
+export async function listPppoeActive(
+  c: PackConfig,
+  secret: ResolveSecret,
+  routerName?: string,
+): Promise<{ mode: PackMode; sessions: PppoeSession[]; routers: RouterOutcome<number>[] }> {
+  if (mikrotikMode(c) === "mock") {
+    const sessions = mockPppoe();
+    return { mode: "mock", sessions, routers: [{ router: MOCK_ROUTER, host: "", ok: true, value: sessions.length }] };
+  }
+  const perRouter = await eachRouter(selectRouters(c, routerName), async (r) =>
+    (await mikrotikRows(c, r, "/ppp/active", secret))
+      .filter((row) => (row.service ?? "pppoe") === "pppoe")
+      .map((row) => ({ router: r.name, name: row.name ?? "", address: row.address ?? "", callerId: row["caller-id"] ?? "", uptime: row.uptime ?? "", service: row.service ?? "pppoe" })),
+  );
   return {
     mode: "live",
-    resource: {
-      cpuLoadPct: Number(r["cpu-load"] ?? 0),
+    sessions: perRouter.flatMap((o) => (o.ok ? o.value : [])),
+    routers: perRouter.map((o) => (o.ok ? { ...o, value: o.value.length } : o)),
+  };
+}
+
+export async function systemResource(
+  c: PackConfig,
+  secret: ResolveSecret,
+  routerName?: string,
+): Promise<{ mode: PackMode; routers: RouterOutcome<RouterResource>[] }> {
+  if (mikrotikMode(c) === "mock") return { mode: "mock", routers: [{ router: MOCK_ROUTER, host: "", ok: true, value: mockResource() }] };
+  const routers = await eachRouter(selectRouters(c, routerName), async (r) => {
+    const row = (await mikrotikRows(c, r, "/system/resource", secret))[0] ?? {};
+    const total = Number(row["total-memory"] ?? 0);
+    const free = Number(row["free-memory"] ?? 0);
+    return {
+      cpuLoadPct: Number(row["cpu-load"] ?? 0),
       memUsedPct: total ? Math.round(((total - free) / total) * 100) : 0,
       totalMemoryMb: Math.round(total / 1048576),
-      uptime: r.uptime ?? "",
-      version: r.version ?? "",
-      board: r["board-name"] ?? "",
-    },
-  };
+      uptime: row.uptime ?? "",
+      version: row.version ?? "",
+      board: row["board-name"] ?? "",
+    };
+  });
+  return { mode: "live", routers };
 }
 
 const IGD = "InternetGatewayDevice";

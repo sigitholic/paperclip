@@ -2,7 +2,10 @@ import net from "node:net";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { encodeLength, encodeSentence, routerOsQuery, SentenceDecoder } from "../src/routeros-api.js";
-import { listPppoeActive, mikrotikEndpoint, systemResource } from "../src/sources.js";
+import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
+import manifest from "../src/manifest.js";
+import plugin from "../src/worker.js";
+import { listPppoeActive, mikrotikEndpoint, mikrotikRouters, systemResource } from "../src/sources.js";
 
 const USER = "noc-ro";
 const PASS = "s3cret";
@@ -79,17 +82,89 @@ describe("pack tools over the RouterOS API", () => {
 
   it("maps PPPoE sessions and router resources like the REST path", async () => {
     const pppoe = await listPppoeActive(config(), secret);
-    expect(pppoe).toEqual({ mode: "live", sessions: [{ name: "pelanggan-01", address: "10.10.0.2", callerId: "AA:BB:CC:00:00:01", uptime: "1d2h", service: "pppoe" }] });
+    expect(pppoe.mode).toBe("live");
+    expect(pppoe.sessions).toEqual([{ router: "default", name: "pelanggan-01", address: "10.10.0.2", callerId: "AA:BB:CC:00:00:01", uptime: "1d2h", service: "pppoe" }]);
     const res = await systemResource(config(), secret);
-    expect(res.resource).toEqual({ cpuLoadPct: 12, memUsedPct: 50, totalMemoryMb: 1024, uptime: "3w", version: "7.16", board: "CCR2004" });
+    expect(res.routers).toEqual([
+      { router: "default", host: "127.0.0.1", ok: true, value: { cpuLoadPct: 12, memUsedPct: 50, totalMemoryMb: 1024, uptime: "3w", version: "7.16", board: "CCR2004" } },
+    ]);
     expect(commands).toContain("/system/resource/print");
   });
 
   it("picks the protocol and TLS mode from the well-known ports", () => {
-    expect(mikrotikEndpoint({ mikrotikPort: 8728, mikrotikUseTls: true })).toEqual({ protocol: "api", port: 8728, tls: false });
-    expect(mikrotikEndpoint({ mikrotikPort: 8729 })).toEqual({ protocol: "api", port: 8729, tls: true });
-    expect(mikrotikEndpoint({ mikrotikProtocol: "api" })).toEqual({ protocol: "api", port: 8728, tls: false });
+    expect(mikrotikEndpoint({ port: 8728, useTls: true })).toEqual({ protocol: "api", port: 8728, tls: false });
+    expect(mikrotikEndpoint({ port: 8729 })).toEqual({ protocol: "api", port: 8729, tls: true });
+    expect(mikrotikEndpoint({ protocol: "api" })).toEqual({ protocol: "api", port: 8728, tls: false });
     expect(mikrotikEndpoint({})).toEqual({ protocol: "rest", port: 443, tls: true });
-    expect(mikrotikEndpoint({ mikrotikPort: 8080, mikrotikUseTls: false })).toEqual({ protocol: "rest", port: 8080, tls: false });
+    expect(mikrotikEndpoint({ port: 8080, useTls: false })).toEqual({ protocol: "rest", port: 8080, tls: false });
+  });
+});
+
+describe("multiple MikroTik routers", () => {
+  const ref = (secretId: string) => ({ type: "secret_ref", secretId });
+  const fleet = () => ({
+    ...{ mikrotikHost: "127.0.0.1", mikrotikPort: port, mikrotikProtocol: "api" as const, mikrotikUsername: USER, mikrotikPassword: ref("main") },
+    mikrotikRouters: [
+      { name: "bras-2", host: "127.0.0.1", port, protocol: "api" as const, username: USER, password: ref("bras") },
+      { name: "dead", host: "127.0.0.1", port: 1, protocol: "api" as const, username: USER, password: ref("dead") },
+      { name: "no-host" },
+    ],
+    timeoutMs: 2000,
+  });
+  const paths: string[] = [];
+  const recordingSecret = async (_ref: unknown, configPath: string) => {
+    paths.push(configPath);
+    return PASS;
+  };
+
+  it("lists the flat router as 'default' plus named routers with a host, and rejects duplicate names", () => {
+    expect(mikrotikRouters(fleet()).map((r) => [r.name, r.passwordPath])).toEqual([
+      ["default", "mikrotikPassword"],
+      ["bras-2", "mikrotikRouters.0.password"],
+      ["dead", "mikrotikRouters.1.password"],
+    ]);
+    expect(() => mikrotikRouters({ mikrotikRouters: [{ name: "a", host: "x" }, { name: "a", host: "y" }] })).toThrow(/duplicate/);
+  });
+
+  it("reads all routers, resolves each router's own secret, and reports the unreachable one", async () => {
+    paths.length = 0;
+    const pppoe = await listPppoeActive(fleet(), recordingSecret);
+    expect(pppoe.sessions.map((s) => s.router)).toEqual(["default", "bras-2"]);
+    expect(pppoe.routers.map((o) => [o.router, o.ok])).toEqual([["default", true], ["bras-2", true], ["dead", false]]);
+    expect(paths.sort()).toEqual(["mikrotikPassword", "mikrotikRouters.0.password", "mikrotikRouters.1.password"]);
+  });
+
+  it("queries one router by name and rejects an unknown name", async () => {
+    const res = await systemResource(fleet(), recordingSecret, "bras-2");
+    expect(res.routers.map((o) => o.router)).toEqual(["bras-2"]);
+    await expect(systemResource(fleet(), recordingSecret, "nope")).rejects.toThrow(/unknown router "nope"; configured: default, bras-2, dead/);
+  });
+
+  it("fails the tool only when every selected router is down", async () => {
+    await expect(systemResource(fleet(), recordingSecret, "dead")).rejects.toThrow(/^dead: RouterOS API/);
+  });
+
+  it("tools report per-router results and keep the fleet snapshot for the widget", async () => {
+    const h = createTestHarness({ manifest, config: fleet() });
+    h.ctx.secrets.resolve = async () => PASS;
+    await plugin.definition.setup(h.ctx);
+    const run = { companyId: "company-1" };
+    type R = { content: string; data: any };
+    const routers = await h.executeTool<R>("mikrotik.list_routers", {}, run);
+    expect(routers.data.routers.map((r: any) => `${r.name}:${r.protocol}`)).toEqual(["default:api", "bras-2:api", "dead:api"]);
+    expect(JSON.stringify(routers.data)).not.toContain("secret");
+
+    const pppoe = await h.executeTool<R>("mikrotik.list_pppoe_active", {}, run);
+    expect(pppoe.data.total).toBe(2);
+    expect(pppoe.content).toMatch(/default 1, bras-2 1/);
+    expect(pppoe.content).toMatch(/dead UNREACHABLE/);
+
+    const res = await h.executeTool<R>("mikrotik.system_resource", {}, run);
+    expect(res.data.resource.board).toBe("CCR2004");
+    expect(res.data.routers.filter((r: any) => !r.ok).map((r: any) => r.router)).toEqual(["dead"]);
+
+    await h.executeTool<R>("mikrotik.system_resource", { router: "bras-2" }, run);
+    const last = await h.getData<any>("last-check", { companyId: "company-1" });
+    expect(last).toMatchObject({ pppoe: { active: 2 }, router: { total: 3, unreachable: ["dead"], cpuLoadPct: 12 } });
   });
 });

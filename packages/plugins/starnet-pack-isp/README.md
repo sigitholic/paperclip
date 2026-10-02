@@ -2,9 +2,11 @@
 
 The first Starnet "pack", built as a plain Paperclip plugin with **zero core edits**. It includes:
 
-- **4 read-only tools**, called by agents through the Paperclip tool gateway as `starnet.pack-isp:<name>`:
-  - `mikrotik.list_pppoe_active` — RouterOS `/ppp/active` (API `print` or REST `GET /rest/ppp/active`), filtered to `service=pppoe`
-  - `mikrotik.system_resource` — RouterOS `/system/resource` (API `print` or REST `GET /rest/system/resource`)
+- **5 read-only tools**, called by agents through the Paperclip tool gateway as `starnet.pack-isp:<name>`:
+  - `mikrotik.list_routers` — configured routers (name, host, transport), never credentials
+  - `mikrotik.list_pppoe_active` — RouterOS `/ppp/active` (API `print` or REST `GET /rest/ppp/active`), filtered to `service=pppoe`; per router plus total
+  - `mikrotik.system_resource` — RouterOS `/system/resource` (API `print` or REST `GET /rest/system/resource`), per router
+  - Both MikroTik tools take an optional `router=<name>`; without it they read every router (4 in parallel). An unreachable router is reported as `UNREACHABLE (...)` and the others still answer; the tool fails only if every selected router fails.
   - `genieacs.list_devices` — GenieACS NBI `GET /devices/?query=…&projection=…`
   - `genieacs.device_status` — GenieACS NBI, filtered by `_id`
 - **NOC Engineer**: a plugin-managed agent. It uses the `process` adapter to run `agent/noc-check.mjs`, a deterministic script that needs no LLM. Swap in an LLM adapter later; the tools stay the same.
@@ -28,6 +30,7 @@ Set the config with `POST /api/plugins/:pluginId/config` `{ companyId, configJso
 | `mikrotikProtocol` | `api` = RouterOS API (`/ip service` `api` 8728 or `api-ssl` 8729, RouterOS ≥ 6.43). `rest` = REST over `www`/`www-ssl` (RouterOS ≥ 7.1). Default: `api` when the port is 8728/8729, otherwise `rest`. |
 | `mikrotikUseTls` | Only for non-standard ports. REST defaults to TLS, API to plain. Port 8728 is always plain and 8729 always TLS. |
 | `mikrotikTlsVerify` (default `true`) | Verify the API-SSL certificate. Turn off only for a self-signed certificate on a trusted network. |
+| `mikrotikRouters` | Extra routers: `[{ name, host, protocol?, port?, useTls?, tlsVerify?, username?, password? }]`. `password` is a secret-ref (routers may share one). The flat `mikrotik*` fields above are the router named `default`. Names must be unique. |
 | `mikrotikPassword` | **secret-ref**: `{ "type": "secret_ref", "secretId": "<company secret id>" }` |
 | `genieacsBaseUrl`, `genieacsUsername` | NBI URL, e.g. `http://acs:7557` |
 | `genieacsPassword` | **secret-ref** (optional) |
@@ -56,7 +59,7 @@ Transport notes:
    `POST /api/plugins/:pluginId/actions/setup` `{ "companyId": "…", "params": { "companyId": "…" } }`
 3. **Board step: grant the tools.**
    - The gateway is deny-by-default. Neither a plugin nor `permissions.pluginTools` can grant tool access; a board user has to.
-   - Create a tool profile `defaultAction: "deny"` that has four `tool_name` entries, one per `starnet.pack-isp:*` tool, and bind it to the NOC Engineer (`targetType: "agent"`).
+   - Create a tool profile `defaultAction: "deny"` that has one `tool_name` entry per `starnet.pack-isp:*` tool (five), and bind it to both NOC agents (`targetType: "agent"`). When a pack version adds a tool, add its entry (`POST /api/tool-profiles/:profileId/entries`); the devkit `seed` does this.
    - API: `POST /api/companies/:id/tools/profiles`, then `…/tools/profiles/:profileId/bind`.
 4. Optional manual run: `POST /api/plugins/:pluginId/actions/run-daily-check` (same body as setup).
 

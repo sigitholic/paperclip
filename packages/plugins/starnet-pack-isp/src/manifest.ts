@@ -10,18 +10,26 @@ export const DAILY_ROUTINE_KEY = "daily-pppoe-check";
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required });
 
 /** Read-only tools. Names are chosen so the gateway name heuristic classifies them as `read`. */
+const ROUTER_PARAM = { type: "string", description: "Router name from mikrotik.list_routers. Default: all configured routers." };
+
 export const TOOLS = [
+  {
+    name: "mikrotik.list_routers",
+    displayName: "MikroTik: configured routers",
+    description: "Names, hosts and transport (API/REST) of the configured MikroTik routers. No credentials. Read-only.",
+    parametersSchema: obj({}),
+  },
   {
     name: "mikrotik.list_pppoe_active",
     displayName: "MikroTik: active PPPoE sessions",
-    description: "List active PPPoE sessions on the configured MikroTik router (RouterOS REST /rest/ppp/active). Read-only.",
-    parametersSchema: obj({ limit: { type: "number", description: "Max sessions returned (default 50)." } }),
+    description: "Active PPPoE sessions (/ppp/active) per router plus the total; unreachable routers are reported, not hidden. Read-only.",
+    parametersSchema: obj({ limit: { type: "number", description: "Max sessions returned (default 50)." }, router: ROUTER_PARAM }),
   },
   {
     name: "mikrotik.system_resource",
     displayName: "MikroTik: system resource",
-    description: "CPU load, memory, uptime and version of the configured MikroTik router (RouterOS REST /rest/system/resource). Read-only.",
-    parametersSchema: obj({}),
+    description: "CPU load, memory, uptime and version (/system/resource) of each router; unreachable routers are reported. Read-only.",
+    parametersSchema: obj({ router: ROUTER_PARAM }),
   },
   {
     name: "genieacs.list_devices",
@@ -43,7 +51,7 @@ export const TOOLS = [
 const ROUTINE_BRIEF = `Daily NOC check (Starnet ISP pack).
 
 1. Call starnet.pack-isp tools: mikrotik.list_pppoe_active, mikrotik.system_resource, genieacs.list_devices.
-2. Post one comment summarizing: active PPPoE sessions, router CPU/memory/uptime, CPE online/offline counts, and anything abnormal (CPU > 80%, memory > 85%, offline CPE > 10%).
+2. Post one comment summarizing: active PPPoE sessions (total and per router), CPU/memory/uptime of each router, CPE online/offline counts, and anything abnormal (router unreachable, CPU > 80%, memory > 85%, offline CPE > 10%).
 3. State clearly if data came from MOCK mode (no device configured).
 4. Mark this issue done. Never change device configuration from this routine.`;
 
@@ -54,18 +62,23 @@ const NOC_LLM_INSTRUCTIONS = `# NOC Engineer (Starnet ISP pack)
 You are the NOC engineer of a Starnet ISP office. You monitor PPPoE sessions, router health and
 customer CPE devices.
 
-- Get data only from the starnet.pack-isp tools: mikrotik.list_pppoe_active, mikrotik.system_resource,
-  genieacs.list_devices, genieacs.device_status. Never guess numbers you did not read from a tool.
+- Get data only from the starnet.pack-isp tools: mikrotik.list_routers, mikrotik.list_pppoe_active,
+  mikrotik.system_resource, genieacs.list_devices, genieacs.device_status. Never guess numbers you
+  did not read from a tool.
+- There can be several MikroTik routers. Without \`router\` the MikroTik tools read all of them and
+  report each one; pass router=<name> (names from mikrotik.list_routers) when asked about one router.
 - If these tools are not offered to you natively, call them from the shell through the Paperclip
   tool gateway (same grants and policy):
     node "${PACK_TOOL_CLI}" list
+    node "${PACK_TOOL_CLI}" mikrotik.list_routers
     node "${PACK_TOOL_CLI}" mikrotik.list_pppoe_active limit=50
+    node "${PACK_TOOL_CLI}" mikrotik.system_resource router=<name>
     node "${PACK_TOOL_CLI}" genieacs.device_status deviceId=<id>
   Pass parameters as key=value (no JSON quoting needed). Do not call device APIs or the gateway
   in any other way.
 - All tools are read-only. Never change device configuration, never run shell commands against
   network devices, and say so if a request needs a write action: it must go to a human operator.
-- Flag as abnormal: router CPU > 80%, memory > 85%, offline CPE > 10% of devices.
+- Flag as abnormal: a router UNREACHABLE, router CPU > 80%, memory > 85%, offline CPE > 10% of devices.
 - If a tool result says MOCK mode, state clearly that the data is not from a live device.
 - Reply in the requester's language (usually Indonesian). Keep answers short: the numbers, what is
   abnormal, and the suggested next step.
@@ -93,7 +106,7 @@ const manifest: PaperclipPluginManifestV1 = {
   instanceConfigSchema: {
     type: "object",
     properties: {
-      mikrotikHost: { type: "string", description: "RouterOS host/IP. Leave empty for MOCK mode." },
+      mikrotikHost: { type: "string", description: "Main RouterOS host/IP (router name \"default\"). Leave empty, with no extra routers, for MOCK mode." },
       mikrotikProtocol: {
         type: "string",
         enum: ["api", "rest"],
@@ -104,6 +117,24 @@ const manifest: PaperclipPluginManifestV1 = {
       mikrotikTlsVerify: { type: "boolean", default: true, description: "Verify the router certificate on API-SSL. Turn off only for a self-signed certificate on a trusted network." },
       mikrotikUsername: { type: "string" },
       mikrotikPassword: { format: "secret-ref", description: "Company secret (value is a { type: \"secret_ref\", secretId } binding)." },
+      mikrotikRouters: {
+        type: "array",
+        description: "Additional MikroTik routers. Each needs a unique name; port 8728/8729 selects the RouterOS API like the main router.",
+        items: {
+          type: "object",
+          required: ["name", "host"],
+          properties: {
+            name: { type: "string", description: "Unique short name, e.g. bras-pusat (not \"default\")." },
+            host: { type: "string" },
+            protocol: { type: "string", enum: ["api", "rest"] },
+            port: { type: "number" },
+            useTls: { type: "boolean" },
+            tlsVerify: { type: "boolean", default: true },
+            username: { type: "string" },
+            password: { format: "secret-ref", description: "Company secret; routers may share one." },
+          },
+        },
+      },
       genieacsBaseUrl: { type: "string", description: "GenieACS NBI URL, e.g. http://acs:7557. Leave empty for MOCK mode." },
       genieacsUsername: { type: "string" },
       genieacsPassword: { format: "secret-ref" },

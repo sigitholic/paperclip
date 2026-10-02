@@ -128,7 +128,9 @@ Ringkasnya (detail di README Starnet dan README pack-isp):
    - **REST** (`www`/`www-ssl`, RouterOS ≥ 7.1).
 2. Simpan password sebagai company secret (**Company Settings → Secrets**).
 3. Isi config plugin **Starnet ISP Pack** (host, protokol, port, username, secret untuk password, URL GenieACS).
-   Port 8728/8729 otomatis memilih protokol API.
+   Port 8728/8729 otomatis memilih protokol API. Router tambahan diisi di **mikrotikRouters** (nama unik, host,
+   port, username, secret password; boleh berbagi secret). Router utama bernama `default`. Tool MikroTik membaca
+   semua router kecuali diberi `router=<nama>`, dan router yang mati dilaporkan sebagai alert.
 4. Sertifikat self-signed ditolak Node: pakai CA internal (`NODE_EXTRA_CA_CERTS`), matikan `mikrotikTlsVerify`
    (API-SSL, hanya di jaringan tepercaya), atau transport tanpa TLS hanya di VLAN manajemen.
 

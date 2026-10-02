@@ -19,7 +19,13 @@ export const PLUGINS = {
   "starnet.virtual-office": "packages/plugins/starnet-virtual-office",
   "starnet.memory": "packages/plugins/starnet-memory",
 };
-export const ISP_TOOLS = ["mikrotik.list_pppoe_active", "mikrotik.system_resource", "genieacs.list_devices", "genieacs.device_status"].map((t) => `starnet.pack-isp:${t}`);
+export const ISP_TOOLS = [
+  "mikrotik.list_routers",
+  "mikrotik.list_pppoe_active",
+  "mikrotik.system_resource",
+  "genieacs.list_devices",
+  "genieacs.device_status",
+].map((t) => `starnet.pack-isp:${t}`);
 export const FAKE = { routerosPort: 18728, genieacsPort: 17557, routerosUser: "noc-ro" };
 const PROFILE_KEY = "starnet-noc-readonly";
 
@@ -76,7 +82,7 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
     }
   }
 
-  // 4. Board step: deny-by-default tool profile with the four read-only tools, bound to both NOCs.
+  // 4. Board step: deny-by-default tool profile with the read-only pack tools, bound to both NOCs.
   const profiles = await api.get(`/companies/${companyId}/tools/profiles`);
   let profile = (Array.isArray(profiles) ? profiles : profiles.profiles ?? []).find((p) => p.profileKey === PROFILE_KEY);
   if (!profile) {
@@ -87,6 +93,12 @@ export async function seedDemo({ companyName = "Starnet Demo", mode, log = conso
       defaultAction: "deny",
       entries: ISP_TOOLS.map((toolName) => ({ selectorType: "tool_name", effect: "include", toolName })),
     });
+  } else {
+    const granted = new Set((profile.entries ?? []).map((e) => e.toolName));
+    for (const toolName of ISP_TOOLS.filter((t) => !granted.has(t))) {
+      await api.post(`/tool-profiles/${profile.id}/entries`, { selectorType: "tool_name", effect: "include", toolName });
+      log(`tool profile: granted ${toolName}`);
+    }
   }
   for (const id of nocAgents) {
     try {

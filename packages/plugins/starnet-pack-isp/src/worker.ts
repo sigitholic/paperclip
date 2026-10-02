@@ -1,27 +1,75 @@
 import { definePlugin, runWorker, type EnvSecretRefBinding, type PluginContext, type ToolResult, type ToolRunContext } from "@paperclipai/plugin-sdk";
 import { assertGatewayRisk, packResult } from "@starnet/pack-kit";
 import { DAILY_ROUTINE_KEY, NOC_AGENT_KEY, NOC_LLM_AGENT_KEY, TOOLS } from "./manifest.js";
-import { deviceStatus, listDevices, listPppoeActive, systemResource, type PackConfig, type ResolveSecret } from "./sources.js";
+import {
+  deviceStatus,
+  listDevices,
+  listPppoeActive,
+  mikrotikEndpoint,
+  mikrotikMode,
+  mikrotikRouters,
+  systemResource,
+  type PackConfig,
+  type ResolveSecret,
+  type RouterOutcome,
+} from "./sources.js";
 
 type ToolName = (typeof TOOLS)[number]["name"];
 type Handler = (cfg: PackConfig, secret: ResolveSecret, p: Record<string, unknown>) => Promise<{ result: ToolResult; snapshot: Record<string, unknown> }>;
 
 const num = (v: unknown, d: number) => (typeof v === "number" && v > 0 ? Math.floor(v) : d);
+const routerParam = (p: Record<string, unknown>) => (typeof p.router === "string" && p.router.trim() ? p.router.trim() : undefined);
+const unreachable = (outcomes: RouterOutcome<unknown>[]) =>
+  outcomes.flatMap((o) => (o.ok ? [] : [`${o.router} UNREACHABLE (${o.error})`]));
 
 const handlers: Record<ToolName, Handler> = {
+  "mikrotik.list_routers": async (cfg) => {
+    const routers = mikrotikRouters(cfg).map((r) => ({ name: r.name, host: r.host, ...mikrotikEndpoint(r) }));
+    const summary = routers.length
+      ? `${routers.length} router(s): ${routers.map((r) => `${r.name} ${r.host}:${r.port} ${r.protocol}${r.tls ? "+tls" : ""}`).join(", ")}`
+      : "no router configured";
+    return { result: packResult(mikrotikMode(cfg), "mikrotik", summary, { routers }), snapshot: {} };
+  },
   "mikrotik.list_pppoe_active": async (cfg, secret, p) => {
-    const { mode, sessions } = await listPppoeActive(cfg, secret);
+    const router = routerParam(p);
+    const { mode, sessions, routers } = await listPppoeActive(cfg, secret, router);
     const shown = sessions.slice(0, num(p.limit, 50));
+    const perRouter = routers.map((o) => (o.ok ? { router: o.router, host: o.host, ok: true, total: o.value } : { router: o.router, host: o.host, ok: false, error: o.error }));
+    const parts = [`${sessions.length} active PPPoE sessions on ${routers.length} router(s) (showing ${shown.length})`];
+    if (routers.length > 1) parts.push(routers.flatMap((o) => (o.ok ? [`${o.router} ${o.value}`] : [])).join(", "));
+    parts.push(...unreachable(routers));
     return {
-      result: packResult(mode, "mikrotik", `${sessions.length} active PPPoE sessions (showing ${shown.length})`, { total: sessions.length, sessions: shown }),
-      snapshot: { pppoe: { mode, active: sessions.length } },
+      result: packResult(mode, "mikrotik", parts.join("; "), { total: sessions.length, sessions: shown, routers: perRouter }),
+      // A single-router query must not overwrite the fleet totals the widget shows.
+      snapshot: router ? {} : { pppoe: { mode, active: sessions.length, routers: perRouter } },
     };
   },
-  "mikrotik.system_resource": async (cfg, secret) => {
-    const { mode, resource: r } = await systemResource(cfg, secret);
+  "mikrotik.system_resource": async (cfg, secret, p) => {
+    const router = routerParam(p);
+    const { mode, routers } = await systemResource(cfg, secret, router);
+    const ok = routers.flatMap((o) => (o.ok ? [{ router: o.router, ...o.value }] : []));
+    const first = ok[0]!;
+    const lines = routers.map((o) =>
+      o.ok
+        ? `${o.router}: ${o.value.board} ${o.value.version}, CPU ${o.value.cpuLoadPct}%, memory ${o.value.memUsedPct}% of ${o.value.totalMemoryMb} MB, uptime ${o.value.uptime}`
+        : `${o.router}: UNREACHABLE (${o.error})`,
+    );
+    const perRouter = routers.map((o) => (o.ok ? { router: o.router, host: o.host, ok: true, resource: o.value } : { router: o.router, host: o.host, ok: false, error: o.error }));
     return {
-      result: packResult(mode, "mikrotik", `${r.board} ${r.version}, CPU ${r.cpuLoadPct}%, memory ${r.memUsedPct}% of ${r.totalMemoryMb} MB, uptime ${r.uptime}`, { resource: r }),
-      snapshot: { router: { mode, cpuLoadPct: r.cpuLoadPct, memUsedPct: r.memUsedPct, uptime: r.uptime, board: r.board } },
+      result: packResult(mode, "mikrotik", lines.join("\n"), { resource: first, routers: perRouter }),
+      snapshot: router
+        ? {}
+        : {
+            router: {
+              mode,
+              cpuLoadPct: Math.max(...ok.map((r) => r.cpuLoadPct)),
+              memUsedPct: Math.max(...ok.map((r) => r.memUsedPct)),
+              uptime: first.uptime,
+              board: first.board,
+              total: routers.length,
+              unreachable: routers.filter((o) => !o.ok).map((o) => o.router),
+            },
+          },
     };
   },
   "genieacs.list_devices": async (cfg, secret, p) => {

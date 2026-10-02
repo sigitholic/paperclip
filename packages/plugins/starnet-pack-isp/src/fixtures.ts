@@ -3,6 +3,7 @@ import type { Device, PppoeSession, RouterResource } from "./sources.js";
 
 export function mockPppoe(): PppoeSession[] {
   return Array.from({ length: 137 }, (_, i) => ({
+    router: "mock",
     name: `pel-${String(1001 + i).padStart(5, "0")}@starnet`,
     address: `100.64.${10 + Math.floor(i / 250)}.${(i % 250) + 2}`,
     callerId: `DC:2C:6E:${(0x10 + (i >> 8)).toString(16).toUpperCase()}:${(i & 0xff).toString(16).padStart(2, "0").toUpperCase()}:7A`,
