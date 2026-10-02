@@ -39,6 +39,7 @@ import {
   normalizeBaseUrl,
   TIER_CONFIG_KEY,
 } from "@starnet/pack-kit";
+import { apiBaseUrl, describePack, fetchContextPack, MEMORY_CONFIG_KEY, memoryEnabled, type MemoryFetch, withContextPack } from "./memory-context.js";
 
 export const ADAPTER_TYPE = NINEROUTER_ADAPTER_TYPE;
 export const BASE_URL_KEY = NINEROUTER_BASE_URL_KEY;
@@ -68,7 +69,7 @@ export function resolveBaseUrl(config: Record<string, unknown>): string {
 /** Codex adapter config that routes the ACP session through 9router. */
 export function toCodexConfig(config: Record<string, unknown>): Record<string, unknown> {
   const baseUrl = resolveBaseUrl(config);
-  const { [BASE_URL_KEY]: _url, [TIER_CONFIG_KEY]: _tier, ...rest } = config;
+  const { [BASE_URL_KEY]: _url, [TIER_CONFIG_KEY]: _tier, [MEMORY_CONFIG_KEY]: _memory, ...rest } = config;
   const gatewayEnv = codexGatewayEnv({ id: NINEROUTER_GATEWAY_ID, name: "9router", baseUrl, envKey: NINEROUTER_ENV_KEY });
   return { ...rest, engine: "acp", env: { ...asRecord(config.env), ...gatewayEnv } };
 }
@@ -199,6 +200,13 @@ export function getConfigSchema(): AdapterConfigSchema {
         required: true,
         hint: "9router model id or combo name, e.g. kr/claude-sonnet-4.5",
       },
+      {
+        key: MEMORY_CONFIG_KEY,
+        label: "Starnet Memory context",
+        type: "toggle",
+        default: true,
+        hint: "Prepend the curated <starnet-context> pack from the starnet.memory plugin to every run on an issue. Skipped when the plugin is missing.",
+      },
     ],
   };
 }
@@ -210,6 +218,7 @@ Adapter: ${ADAPTER_TYPE} (Starnet external adapter; Codex ACP routed through 9ro
 Fields:
 - ${BASE_URL_KEY} (string, required): 9router base URL; "/v1" is appended when missing. Falls back to server env NINEROUTER_BASE_URL.
 - model (string, required): 9router model id or combo name.
+- ${MEMORY_CONFIG_KEY} (boolean, default true): inject the starnet.memory context pack for the run's issue into the prompt.
 - env.${NINEROUTER_ENV_KEY} (secret_ref, required): 9router API key bound to a company secret.
 - Other codex_local fields (instructionsFilePath, cwd, timeoutSec, modelReasoningEffort, ...) are passed through to the Codex ACP engine.
 
@@ -219,14 +228,33 @@ Notes:
 - Every prompt, including customer data and tool output, passes through the gateway. Run 9router with REQUIRE_API_KEY=true.
 `;
 
+/** Run context with the Starnet Memory pack injected when enabled and available; logs sizes only. */
+export async function injectMemoryContext(ctx: AdapterExecutionContext, fetchImpl?: MemoryFetch): Promise<Record<string, unknown>> {
+  if (!memoryEnabled(ctx.config)) return ctx.context;
+  const result = await fetchContextPack({
+    apiUrl: apiBaseUrl(ctx.agent),
+    issueId: asString(ctx.context.issueId),
+    runId: ctx.runId,
+    authToken: ctx.authToken,
+    fetchImpl,
+  });
+  if ("skipped" in result) {
+    await ctx.onLog("stdout", `[starnet] memory context skipped: ${result.skipped}\n`);
+    return ctx.context;
+  }
+  await ctx.onLog("stdout", describePack(result.pack));
+  return withContextPack(ctx.context, result.pack);
+}
+
 export function createServerAdapter(): ServerAdapterModule {
   return {
     type: ADAPTER_TYPE,
     runtimeToolDelivery: "native_mcp",
-    execute: (ctx: AdapterExecutionContext) => {
+    execute: async (ctx: AdapterExecutionContext) => {
       const config = toCodexConfig(ctx.config);
       refreshCacheFromRun(ctx.config);
-      return codexExecute({ ...ctx, config });
+      const context = await injectMemoryContext(ctx);
+      return codexExecute({ ...ctx, config, context });
     },
     testEnvironment: (ctx) => testEnvironment(ctx),
     acp: { agentId: "codex", skillsMode: "ephemeral", prerequisites: { nodeRange: ">=24.11.0", packages: ["@agentclientprotocol/codex-acp"] } },

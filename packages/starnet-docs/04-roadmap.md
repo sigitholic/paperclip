@@ -14,7 +14,7 @@ Paperclip yang sudah ditemui; perlu disetujui sebelum dikerjakan.
 |---|---|---|
 | 0 | Fondasi: pack ISP, Office Chat, Virtual Office, P-0, CI, devkit, sync | ✅ Selesai |
 | 1 | Starnet Memory | ✅ Selesai (1.1–1.4) |
-| 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | 🟡 Sebagian: NOC Engineer (LLM) menjawab lewat tool gateway (STAA-35); konteks tersuntik, batas loop, dan QA gate belum |
+| 2 | Runtime adapter Starnet (loop, konteks, sandbox, policy, QA gate) | 🟡 Sebagian: NOC Engineer (LLM) menjawab lewat tool gateway (STAA-35); konteks tersuntik ✅ (STAA-52); batas loop dan QA gate belum |
 | 3 | Tier model per agent (dilebur ke Fase 2) | ✅ Peta tier, skrip validasi, template bertier, `apply-tier` |
 | 4 | Pack OLT/billing + tool tulis di balik approval | ⬜ Rencana |
 | 5 | Agent factory / template office | ⬜ Rencana |
@@ -90,9 +90,23 @@ Cakupan usulan:
    bagian yang tidak tercakup.
 6. Agent NOC versi LLM memakai tool yang sama dengan versi deterministik.
 
+**2.2 Konteks tersuntik — selesai 2 Okt 2026.** Adapter `starnet_9router` mengambil context pack untuk issue run dari
+route agent `starnet.memory` (token run sendiri) sebelum memanggil Codex, lalu menambahkannya ke
+`context.paperclipSessionHandoffMarkdown`. Kedua jalur Codex (exec dan ACP) memasukkan field itu ke setiap prompt,
+termasuk sesi yang di-resume, dan mencatat ukurannya sebagai `sessionHandoffChars`. Handoff sesi milik core tetap ada
+(pack ditempel di belakangnya) dan objek `context` asli tidak diubah, jadi pack tidak ikut tersimpan di snapshot run.
+Best effort: plugin tidak ada, run tanpa issue, atau error = run jalan tanpa memori, dengan satu baris log alasan.
+Bisa dimatikan per agent lewat toggle **Starnet Memory context** (`adapterConfig.starnetMemory: false`). Berlaku
+untuk semua agent `starnet_9router` (NOC LLM, Kepala Kantor, CTO, Software Developer). Tanpa perubahan core.
+
+Bukti STAA-52 (NOC Engineer LLM, `cx/gpt-6-luna`): log run `[starnet] memory context injected: 682 chars (~171 tok),
+sections task+agent; naive history 2028 chars (~507 tok), saved 66.4%`; tanpa memanggil tool, agent mengutip bagian
+"Tugas" dan "Memori agen (run sebelumnya)" dari blok `<starnet-context>`.
+
 Kriteria selesai usulan:
 
 - E2E: pertanyaan NOC dijawab agent LLM lewat tool gateway, dengan context pack terbukti ada di prompt run.
+  (Konteks di prompt: terbukti manual di STAA-52; belum otomatis di E2E devkit.)
 - Tidak ada tool call di luar gateway; tool yang tidak di-grant ditolak.
 - Penghematan token terukur di prompt sungguhan, bukan hanya di pack.
 - `core-diff-check` tetap hijau.
@@ -258,7 +272,8 @@ Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase
   agent lama (sebelumnya routine tertinggal `paused` pada agent yang di-terminate). Cek harian STAA-27 selesai oleh NOC baru.
 - ~~Template agent Starnet memakai tier dari `@starnet/pack-kit` (Fase 3.3).~~ **Selesai 2 Okt** (`tierTemplate`, `apply-tier`).
 - ~~Catat `check:models` dan `apply-tier` di [06-pengembangan-lokal.md](./06-pengembangan-lokal.md).~~ **Selesai 2 Okt.**
-- NOC LLM berikutnya: context pack `starnet.memory` di awal run (lewat helper seperti `pack-tool.mjs`), lalu QA gate.
+- ~~NOC LLM berikutnya: context pack `starnet.memory` di awal run.~~ **Selesai 2 Okt** (disuntik adapter
+  `starnet_9router`, STAA-52). Berikutnya: batas loop/token per run, lalu QA gate.
 - Kandidat PR upstream: managed MCP gateway untuk adapter eksternal yang membungkus Codex (saat ini hanya `codex_local`).
 - ~~Perbarui bagian "Status rencana" di `.github/README.md`.~~ **Selesai 2 Okt** (Memory, tier, Pack NMS, Pack ISP
   multi-router; tabel path memuat `starnet-pack-nms`).
