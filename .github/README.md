@@ -24,6 +24,7 @@ Branch utama fork: **`starnet/main`** (default branch). Kerja baru lewat PR ke b
 | `packages/plugins/starnet-virtual-office/` | Starnet | Halaman Virtual Office + widget. [README](../packages/plugins/starnet-virtual-office/README.md) |
 | `packages/plugins/starnet-pack-nms/` | Starnet | Plugin NMS: 3 tool read-only (`nms.list_sources`, `nms.list_problems`, `nms.host_status`) untuk Zabbix + LibreNMS, webhook alert → issue NOC, widget dashboard. [README](../packages/plugins/starnet-pack-nms/README.md) |
 | `packages/plugins/starnet-pack-kit/` | Starnet | Helper bersama untuk pack Starnet (`fetchJson`, `tierTemplate`, `qualifyTool`). |
+| `packages/starnet-installer/` | Starnet | Installer Windows satu langkah (`install.ps1`/`install.cmd`) dan launcher harian (`start.ps1`/`start.cmd`). Lihat [Install cepat (Windows)](#install-cepat-windows). |
 | `packages/starnet-devkit/` | Starnet | Seed demo, server palsu RouterOS/GenieACS, E2E, skrip sync upstream, guard "no core edits", `check:models`, `apply-tier`. [README](../packages/starnet-devkit/README.md) |
 | `packages/plugins/starnet-memory/` | Starnet | Plugin Starnet Memory: L1 per issue/agent, pin, context pack untuk agent, halaman Memory. |
 | `packages/starnet-memory-core/` | Starnet | Logika Starnet Memory (Phase 1, library murni). [README](../packages/starnet-memory-core/README.md) |
@@ -49,6 +50,38 @@ adalah patch core **P-0** (bridge stream plugin, 4 file di `server/`) yang dicat
 
 Daftar patch core dan usulan PR upstream: [`STARNET_PATCHES.md`](../STARNET_PATCHES.md).
 Riwayat per langkah: [PR yang sudah di-merge](https://github.com/sigitholic/paperclip/pulls?q=is%3Apr+is%3Amerged+base%3Astarnet%2Fmain).
+
+## Install cepat (Windows)
+
+Buka **PowerShell** (tidak perlu Git Bash, tidak perlu WSL), tempel satu baris ini, lalu Enter:
+
+```powershell
+irm https://raw.githubusercontent.com/sigitholic/paperclip/starnet/main/packages/starnet-installer/install.ps1 | iex
+```
+
+Installer mengerjakan semua langkah [Windows manual](#windows-tanpa-wsl) sendiri dan melewati yang sudah ada:
+
+1. Memasang yang belum ada lewat `winget`: Git, Node.js 24+, Visual Studio Build Tools (C++), Rust, dan
+   Docker Desktop. Klik **Yes** kalau Windows meminta izin.
+2. Clone repo ke `%USERPROFILE%\starnet-paperclip` (atau update kalau sudah ada).
+3. Menyalakan Docker dan membuat database Postgres `paperclip-postgres` (port 5441).
+4. `pnpm install` (pnpm 9.15.4 lewat Corepack, script memakai Git Bash hanya untuk proses ini) dan build
+   plugin Starnet.
+5. Memasang tambalan lokal Windows untuk worker plugin (lihat `STARNET_PATCHES.md` #7, tidak di-commit).
+6. `onboard` sekali (config + secret instance), lalu membuat shortcut **Starnet Office** di desktop.
+
+Sehari-hari cukup dobel-klik **Starnet Office** di desktop. Shortcut itu menyalakan Docker, Postgres, dan
+server, mengisi company demo (aman diulang), lalu membuka <http://127.0.0.1:3100>. Start pertama butuh
+5-10 menit (compile Rust). Untuk mematikan, tutup jendelanya.
+
+Catatan:
+
+- Butuh sekitar **15 GB** kosong di drive C (Build Tools sekitar 5 GB, Docker, Rust).
+- Kalau Docker Desktop baru terpasang, installer berhenti dan meminta restart Windows. Buka Docker Desktop
+  sekali (terima syaratnya), lalu jalankan baris di atas lagi. Installer melanjutkan dari langkah terakhir.
+- Folder lain: `$env:STARNET_DIR = "D:\starnet"` sebelum menjalankan baris di atas.
+- Update ke versi terbaru: jalankan installer lagi (`git pull`, install, build).
+- Dari folder clone: dobel-klik `packages\starnet-installer\install.cmd`.
 
 ## Prasyarat
 
@@ -104,6 +137,9 @@ pnpm --filter @starnet/devkit e2e
 Hasil yang diharapkan: seed mencetak `seeded Starnet Demo [STA] mode=mock ...` dan E2E `2 passed`.
 
 ## Windows (tanpa WSL)
+
+Cara termudah: [Install cepat (Windows)](#install-cepat-windows). Langkah manual di bawah ini sama dengan
+yang dikerjakan installer, untuk yang ingin memasang sendiri.
 
 Paperclip bisa jalan langsung di Windows dengan Git Bash, tapi ada dua hal yang berbeda dari Linux/macOS:
 
