@@ -8,7 +8,7 @@ Paperclip yang sudah ditemui; perlu disetujui sebelum dikerjakan.
 > terbawa dari fork, diperbarui lewat sync upstream, dan tidak boleh diedit (aturan no-core-edits). Keselarasan
 > keduanya dibahas di bagian [Keselarasan dengan roadmap upstream](#keselarasan-dengan-roadmap-upstream).
 
-## Status per 2 Okt 2026
+## Status per 3 Okt 2026
 
 | Fase | Fokus | Status |
 |---|---|---|
@@ -19,6 +19,27 @@ Paperclip yang sudah ditemui; perlu disetujui sebelum dikerjakan.
 | 4 | Pack OLT/billing + tool tulis di balik approval | ⬜ Rencana |
 | 5 | Agent factory / template office | ✅ Template office sekali klik (4 office, lewat API import core). Draf roster dari prompt (ADR-003) belum |
 | 6 | Multi-tenant | ⬜ Rencana (sebagian besar sudah core) |
+| – | Installer Windows untuk pengguna awam | ✅ Installer ringan (paket npm + bundle Starnet siap pakai); uji di PC dengan UAC menyala masih menunggu |
+
+## Log harian 2–3 Okt 2026
+
+Semua commit langsung ke `starnet/main` dan di-push; CI `starnet-ci` hijau di commit terakhir.
+
+| Waktu (WIB) | Hasil | Commit |
+|---|---|---|
+| 2 Okt pagi–sore | Status roadmap dan keselarasan dengan `ROADMAP.md` upstream; edit core dari commit lokal dibuang | `91cf88a62`, `cb0def6b8` |
+| 2 Okt sore | Tier model, model probe, adapter `starnet_9router`, NOC Engineer (LLM), template bertier, `apply-tier` (Fase 3) | `281ffe91e`, `7463673d5`, `7f8cd2f46` |
+| 2 Okt sore | Pack ISP: transport RouterOS API, banyak router MikroTik, halaman setting ringkas | `9c97f2aa0`, `1ca9a61d0`, `781e3f1f3` |
+| 2 Okt malam | Pack NMS (Zabbix + LibreNMS), lihat [Pack NMS](#pack-nms--zabbix--librenms-2-okt-2026) | `3279979c4` |
+| 2 Okt malam | Fase 2 selesai: context pack memory (2.2), batas langkah/token (2.1), QA gate (2.3), sandbox Codex (2.4) | `d9b82aef6`, `78a05f239`, `c10b22c6f`, `1a45facbe` |
+| 2 Okt malam | Installer Windows satu langkah dari source + launcher; perbaikan untuk PC `sigit` (execution policy Restricted, Git/Node di luar PATH, timeout Docker, symlink, password Postgres lama, checkout LF) | `9914f5e11` … `13eb89837` |
+| 2 Okt malam | Commit `0fa9fbbc0` sempat membawa file core; dikembalikan identik dengan upstream | `a3d1d00d1` |
+| 2 Okt malam | Fase 5.1: template office sekali klik (Network/ISP, Software, Marketing, Finance), lihat [5.1](#51-template-office--2-okt-2026) | `8e10d98f5` |
+| 2 Okt malam | Network Office dipasang di Starnet Demo: NOC Manager → Kepala Kantor, 3 anggota → NOC Manager, semua `paused`, adapter `starnet_9router`; routine "Laporan mingguan jaringan" (`0 8 * * 1`) `paused` | (data instance, bukan kode) |
+| 3 Okt dini hari | Installer ringan menggantikan installer source sebagai default, lihat [Installer Windows](#installer-windows-3-okt-2026) | `16b1bccea`, `95dd015d4` |
+
+Keputusan operator hari ini: konektor OLT (Fase 4) dilewati dulu; agent lama (Diag Codex, CTO, Software Developer,
+NOC Engineer `process`) **tidak** di-terminate.
 
 ## Fase 0 — Fondasi ✅
 
@@ -302,6 +323,38 @@ Dibuat sebagai plugin `starnet.pack-nms`, bukan connector katalog Apps, karena c
 Belum: uji terhadap server Zabbix/LibreNMS nyata (butuh URL dan token read-only yang disimpan sebagai company secret),
 dan URL webhook publik untuk instance yang bisa dijangkau NMS.
 
+## Installer Windows (3 Okt 2026)
+
+Installer dari source (Git, Docker, Rust, Build Tools, pnpm) terlalu rapuh untuk pengguna awam: di PC `sigit` gagal
+berturut-turut karena execution policy, symlink, password Postgres lama, CRLF, dan sisa schema database
+(`relation "agent_runtime_state" already exists`). Diganti dengan installer ringan; yang lama tetap ada untuk developer
+(`install-dev.ps1`, `start-dev.ps1`).
+
+| Bagian | Isi |
+|---|---|
+| `packages/starnet-installer/install.ps1` | Node.js 24 portable (zip resmi, cek SHA-256), `paperclipai` dari npm dengan versi terkunci (database Postgres bawaan), bundle Starnet dari Release `starnet-bundle`, shortcut desktop. Semua di `%LOCALAPPDATA%\StarnetOffice`; data terpisah dari `~/.paperclip` |
+| `packages/starnet-installer/start.ps1` | Start pertama `onboard --yes`, berikutnya `run`; memasang plugin dan adapter yang belum ada lewat API lokal; membuka browser |
+| `packages/starnet-devkit/scripts/release-bundle.mjs` | Menyusun bundle: 6 plugin (dist + `agent/` + `migrations/`, tanpa sourcemap) dan adapter `starnet_9router` dibundel esbuild jadi satu file. Versi `paperclipai` dikunci di sini (`2026.1001.0`) |
+| `.github/workflows/starnet-release.yml` | Membangun dan menerbitkan `starnet-bundle.zip` (±1,3 MB) ke Release bergulir `starnet-bundle` setiap plugin/adapter berubah |
+
+Temuan teknis:
+
+- Adapter diletakkan di `app\starnet\` supaya memakai `@paperclipai/adapter-utils`, `adapter-codex-local`, dan
+  `@openai/codex` yang sudah ikut terpasang bersama `paperclipai` (tanpa salinan kedua sekitar 900 MB).
+- Database bawaan tidak bisa jalan dengan token Administrator. Bila UAC mati, installer memakai Postgres Docker
+  (container `starnet-office-pg`, port 54331); bila dijalankan "Run as administrator" dengan UAC menyala, installer
+  meminta dijalankan ulang di PowerShell biasa.
+- Tambalan lokal `plugin-loader.ts` (#7) tidak diperlukan di paket npm, karena loader tsx tidak ada di sana.
+- Patch P-0 (stream bridge) belum ada di paket npm, jadi Virtual Office dan Office Chat memakai polling.
+
+| Uji | Hasil |
+|---|---|
+| Install penuh di laptop dev (UAC mati, jalur Docker), port uji 3199 | Selesai sekitar 3 menit (383 paket npm) |
+| Start pertama | Migrasi database sekitar 4 menit; 6/6 plugin `ready`; adapter `starnet_9router` terdaftar; UI tampil (wizard company pertama) |
+| Release dari CI | `starnet-release` sukses; zip bisa diunduh dan diekstrak `tar` bawaan Windows |
+
+Belum: uji di PC dengan UAC menyala (jalur database bawaan), yaitu PC `sigit`.
+
 ## Fase 4 — Pack OLT/billing + tool tulis (usulan)
 
 **Syarat:** Fase 2 selesai, dan salah satu dari: field `risk` eksplisit diterima upstream (kandidat PR 1 di
@@ -385,7 +438,7 @@ Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase
 | 3 | Approve once vs always: usul ke upstream atau dibangun di plugin? | UX approval untuk tool tulis |
 | 4 | ~~MCP propose → register: pakai fitur MCP core atau alur sendiri?~~ **Terjawab:** pakai MCP Tool Gateway & Apps core (sudah ✅ di upstream) | Cara menambah integrasi baru |
 | 5 | Session per tab project dan agent pair: masih dibutuhkan di model issue Paperclip? | Cakupan Office Chat berikutnya |
-| 6 | Windows native: tetap tidak didukung (WSL2), atau fix path Windows diusulkan ke upstream? Data dari audit: Windows native **bisa dipakai** dengan Postgres Docker, Git Bash sebagai script-shell, dan satu tambalan lokal `plugin-loader.ts`; sisa masalahnya terdaftar sebagai kandidat PR upstream (B-02, M-01, M-03, M-05) | Pengalaman developer di Windows |
+| 6 | Windows native: tetap tidak didukung (WSL2), atau fix path Windows diusulkan ke upstream? Data dari audit: Windows native **bisa dipakai** dengan Postgres Docker, Git Bash sebagai script-shell, dan satu tambalan lokal `plugin-loader.ts`; sisa masalahnya terdaftar sebagai kandidat PR upstream (B-02, M-01, M-03, M-05). **Sebagian terjawab 3 Okt:** pengguna awam memakai installer ringan (paket npm, tanpa build); masalah build dari source tetap kandidat PR upstream (#7, #11 di `STARNET_PATCHES.md`) | Pengalaman developer di Windows |
 | 7 | Dokumen "Starnet implementation plan" asli: masih ada salinannya? | Sumber kebenaran roadmap ini |
 
 ## Pekerjaan kecil yang terbuka
@@ -409,3 +462,7 @@ Fase 4), dan Cloud deployments 🟡 (memperkuat keputusan Fase 6 dilebur ke fase
 - ~~README devkit masih menyebut default branch fork `master`.~~ **Selesai 2 Okt.** Masih terbuka: secret
   `STARNET_SYNC_TOKEN` disarankan agar PR sync memicu CI dan bisa menyentuh `.github/workflows/**`.
 - Live test Pack NMS terhadap Zabbix/LibreNMS nyata (ditunda; butuh URL + token read-only).
+- Uji installer ringan di PC `sigit` (UAC menyala, database bawaan).
+- Network Office di Starnet Demo: board memberi izin tool dan me-resume agent serta routine.
+- Opsional, hanya bila operator setuju: terminate agent lama yang tidak dipakai (Diag Codex, CTO, Software Developer).
+- Fase 4 (konektor OLT, tool tulis MikroTik di balik approval) dan draf roster dari prompt (ADR-003).
