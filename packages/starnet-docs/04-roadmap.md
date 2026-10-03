@@ -37,7 +37,8 @@ Semua commit langsung ke `starnet/main` dan di-push; CI `starnet-ci` hijau di co
 | 2 Okt malam | Fase 5.1: template office sekali klik (Network/ISP, Software, Marketing, Finance), lihat [5.1](#51-template-office--2-okt-2026) | `8e10d98f5` |
 | 2 Okt malam | Network Office dipasang di Starnet Demo: NOC Manager → Kepala Kantor, 3 anggota → NOC Manager, semua `paused`, adapter `starnet_9router`; routine "Laporan mingguan jaringan" (`0 8 * * 1`) `paused` | (data instance, bukan kode) |
 | 3 Okt dini hari | Installer ringan menggantikan installer source sebagai default, lihat [Installer Windows](#installer-windows-3-okt-2026) | `16b1bccea`, `95dd015d4` |
-| 3 Okt | Bug Paperclip: binding AI connection tidak bisa dilepas dari UI setelah ganti adapter (CEO di PC `sigit` gagal Save/Test ke `starnet_9router`). Alat sekali klik **Starnet - Perbaiki Agent** di installer ringan; perbaikan core disiapkan di branch `upstream-prop/ai-connection-adapter-switch` (kandidat upstream #12) | (commit ini), `e50e64d32` (branch upstream) |
+| 3 Okt | Bug Paperclip: binding AI connection tidak bisa dilepas dari UI setelah ganti adapter (CEO di PC `sigit` gagal Save/Test ke `starnet_9router`). Alat sekali klik **Starnet - Perbaiki Agent** di installer ringan; perbaikan core disiapkan di branch `upstream-prop/ai-connection-adapter-switch` (kandidat upstream #12) | `ffc901698`, `e50e64d32` (branch upstream) |
+| 3 Okt siang | Run `starnet_9router` gagal di PC tanpa login Codex ("no Codex credentials provisioned for managed home"). Adapter kini memakai Codex home sendiri (`starnet-9router/codex-home/<company>`), jadi cukup `NINEROUTER_API_KEY` (kandidat upstream #13) | (commit ini) |
 
 Keputusan operator hari ini: konektor OLT (Fase 4) dilewati dulu; agent lama (Diag Codex, CTO, Software Developer,
 NOC Engineer `process`) **tidak** di-terminate.

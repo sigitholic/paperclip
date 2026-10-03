@@ -171,9 +171,30 @@ export async function testEnvironment(ctx: AdapterEnvironmentTestContext, fetchI
 
 // The host calls listModels() without agent or company context, so models discovered by a
 // successful test or run (the only places that see the URL and key) are cached on disk.
-export function modelCacheFile(env: NodeJS.ProcessEnv = process.env): string {
+function instanceRoot(env: NodeJS.ProcessEnv): string {
   const home = asString(env.PAPERCLIP_HOME) ?? path.join(os.homedir(), ".paperclip");
-  return path.join(home, "instances", asString(env.PAPERCLIP_INSTANCE_ID) ?? "default", "starnet-9router", "models.json");
+  return path.join(home, "instances", asString(env.PAPERCLIP_INSTANCE_ID) ?? "default");
+}
+
+export function modelCacheFile(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(instanceRoot(env), "starnet-9router", "models.json");
+}
+
+/**
+ * Codex home for gateway runs. It must stay outside `<instance>/companies/`: codex_local treats
+ * homes there as managed and requires a ChatGPT login or OPENAI_API_KEY before launching, which a
+ * run keyed by NINEROUTER_API_KEY never has on a host without a Codex login. It also keeps the
+ * host's ChatGPT login out of gateway runs.
+ */
+export function gatewayCodexHome(companyId: string, env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(instanceRoot(env), "starnet-9router", "codex-home", companyId);
+}
+
+/** `config` with CODEX_HOME set to the gateway home, unless the agent configures its own. */
+export function withGatewayCodexHome(config: Record<string, unknown>, companyId: string, env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+  const runEnv = asRecord(config.env);
+  if (envValue(runEnv, "CODEX_HOME")) return config;
+  return { ...config, env: { ...runEnv, CODEX_HOME: gatewayCodexHome(companyId, env) } };
 }
 
 type ModelCache = Record<string, { models: string[]; fetchedAt: string }>;
@@ -306,6 +327,7 @@ Notes:
 - engine is set by ${SANDBOX_KEY}; a configured engine is ignored.
 - In the sandbox, extraArgs that change or bypass the sandbox or change the model provider are dropped.
 - Sandboxed runs confine writes and network, not reads.
+- Runs use their own Codex home (instances/<id>/starnet-9router/codex-home/<companyId>) unless env.CODEX_HOME is set, so no Codex/ChatGPT login is needed on the host.
 - ${MAX_CONTEXT_TOKENS_KEY} only applies to the ACP engine (sandbox off).
 - Do not connect subscription logins (ChatGPT, Claude, Copilot) to 9router: likely against provider terms.
 - Every prompt, including customer data and tool output, passes through the gateway. Run 9router with REQUIRE_API_KEY=true.
@@ -416,7 +438,8 @@ export function createServerAdapter(): ServerAdapterModule {
     type: ADAPTER_TYPE,
     runtimeToolDelivery: "native_mcp",
     execute: async (ctx: AdapterExecutionContext) => {
-      const { config, sandboxed, droppedArgs } = codexRunConfig(ctx.config);
+      const { config: runConfig, sandboxed, droppedArgs } = codexRunConfig(ctx.config);
+      const config = withGatewayCodexHome(runConfig, ctx.agent.companyId);
       refreshCacheFromRun(ctx.config);
       await ctx.onLog("stdout", describeSandbox(ctx.config, sandboxed, droppedArgs));
       const context = await injectMemoryContext(ctx);

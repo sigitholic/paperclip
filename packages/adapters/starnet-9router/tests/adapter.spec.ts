@@ -1,8 +1,19 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { evaluateCodexCredentialReadiness } from "@paperclipai/adapter-codex-local/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ADAPTER_TYPE, cachedModels, codexRunConfig, createServerAdapter, getConfigSchema, testEnvironment, toCodexConfig } from "../src/index.js";
+import {
+  ADAPTER_TYPE,
+  cachedModels,
+  codexRunConfig,
+  createServerAdapter,
+  gatewayCodexHome,
+  getConfigSchema,
+  testEnvironment,
+  toCodexConfig,
+  withGatewayCodexHome,
+} from "../src/index.js";
 
 beforeEach(() => {
   process.env.PAPERCLIP_HOME = mkdtempSync(join(tmpdir(), "pc-home-"));
@@ -56,6 +67,29 @@ describe("toCodexConfig", () => {
 
   it("fails clearly without a base URL", () => {
     expect(() => toCodexConfig({ model: "m" })).toThrow(/ninerouterBaseUrl/);
+  });
+});
+
+describe("gateway Codex home", () => {
+  it("gives runs their own home that codex_local launches without a Codex login", async () => {
+    const config = withGatewayCodexHome({ env: { NINEROUTER_API_KEY: "sk-1" } }, "c1");
+    const home = (config.env as Record<string, string>).CODEX_HOME;
+    expect(home).toBe(gatewayCodexHome("c1"));
+    expect(home).not.toContain(join("instances", "default", "companies"));
+    const readiness = (configuredCodexHome: string | null) =>
+      evaluateCodexCredentialReadiness({
+        env: { PAPERCLIP_HOME: process.env.PAPERCLIP_HOME, CODEX_HOME: join(process.env.PAPERCLIP_HOME!, "no-host-login") },
+        companyId: "c1",
+        configuredCodexHome,
+        configuredApiKey: null,
+      });
+    expect((await readiness(null)).ready).toBe(false);
+    expect((await readiness(home)).ready).toBe(true);
+  });
+
+  it("keeps a CODEX_HOME the agent configures", () => {
+    const config = { env: { CODEX_HOME: "/custom" } };
+    expect(withGatewayCodexHome(config, "c1")).toBe(config);
   });
 });
 
