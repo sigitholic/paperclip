@@ -10,7 +10,7 @@ import { toolConnections } from "@paperclipai/db";
 import { aiConnectionService } from "../services/ai-connections.js";
 import { defaultAiConnectionForHire } from "../services/agent-ai-connection-default.js";
 import { assertAiConnectionCreateAccess, canInstallSharedAiConnectionForNewAgent, responsibleUserForAiRequest, validateAiApiKey } from "./ai-connections.js";
-import { isAiConnectionCompatible } from "@paperclipai/shared";
+import { adapterSupportsAiConnections, isAiConnectionCompatible } from "@paperclipai/shared";
 import { applyConnectorSkills, resolveConnectorAssignments, annotateConnectorSkills, isConnectorSkill } from "../services/connector-runtime.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
 import { canRetryStoppedRun } from "../services/cancelled-native-startup.js";
@@ -3422,7 +3422,8 @@ export function agentRoutes(
 
       const adapter = requireServerAdapter(type);
 
-      const aiBinding = req.body.aiConnection ? aiConnectionBindingSchema.parse(req.body.aiConnection) : undefined;
+      const harnessSupportsAi = adapterSupportsAiConnections(type, req.body.adapterConfig?.provider, req.body.adapterConfig?.acpxAgent);
+      const aiBinding = req.body.aiConnection && harnessSupportsAi ? aiConnectionBindingSchema.parse(req.body.aiConnection) : undefined;
       if (aiBinding && req.body.testCredentials && Object.keys(req.body.testCredentials).length) throw unprocessable("A managed connection test cannot override its credentials");
       const inputAdapterConfig = aiBinding ? { ...req.body.adapterConfig, env: stripAiAuthBindings(req.body.adapterConfig?.env) } : (req.body?.adapterConfig ?? {}) as Record<string, unknown>;
       const savedAgentId = typeof req.body.agentId === "string" ? req.body.agentId : null;
@@ -5559,8 +5560,18 @@ export function agentRoutes(
         adapterConfig: patchData.adapterConfig,
       });
     }
-    if (existing.runtimeConfig.aiConnection && requestedRuntimeConfig && !requestedRuntimeConfig.aiConnection) requestedRuntimeConfig.aiConnection = existing.runtimeConfig.aiConnection;
-    const nextAiBinding = aiConnectionBindingSchema.safeParse(requestedRuntimeConfig?.aiConnection ?? existing.runtimeConfig.aiConnection).data;
+    const harnessConfig = (patchData.adapterConfig ?? existing.adapterConfig) as Record<string, unknown>;
+    const harnessSupportsAi = adapterSupportsAiConnections(requestedAdapterType, harnessConfig.provider, harnessConfig.acpxAgent);
+    // A harness no AI connection can serve (e.g. an external adapter) cannot keep a binding, and the UI hides the
+    // field for it, so switching to one releases the binding instead of leaving the agent unsaveable.
+    if (!harnessSupportsAi && (requestedRuntimeConfig?.aiConnection || existing.runtimeConfig.aiConnection)) {
+      const { aiConnection: _released, ...rest } = requestedRuntimeConfig ?? existing.runtimeConfig;
+      requestedRuntimeConfig = rest;
+    }
+    if (harnessSupportsAi && existing.runtimeConfig.aiConnection && requestedRuntimeConfig && !requestedRuntimeConfig.aiConnection) requestedRuntimeConfig.aiConnection = existing.runtimeConfig.aiConnection;
+    const nextAiBinding = harnessSupportsAi
+      ? aiConnectionBindingSchema.safeParse(requestedRuntimeConfig?.aiConnection ?? existing.runtimeConfig.aiConnection).data
+      : undefined;
     if (nextAiBinding) {
       await assertCanUpdateAgent(req, existing);
       const changed = JSON.stringify(nextAiBinding) !== JSON.stringify(existing.runtimeConfig.aiConnection);

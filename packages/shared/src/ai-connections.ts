@@ -108,6 +108,34 @@ export const AI_CONNECTION_CAPABILITIES: Record<
     },
   },
 };
+function aiConnectionHarness(
+  adapterType: string,
+  runnerProvider?: unknown,
+  acpxAgent?: unknown,
+): string {
+  if (adapterType !== "paperclip_runner") return adapterType;
+  return runnerProvider === "claude" ||
+    (runnerProvider === "acpx" && acpxAgent === "claude")
+    ? "claude_local"
+    : runnerProvider === "acpx" && acpxAgent === "grok"
+      ? "grok_local"
+    : runnerProvider === "codex"
+      ? "codex_local"
+      : runnerProvider === "opencode"
+        ? "opencode_local"
+        : "unsupported";
+}
+/** False for harnesses no AI connection can serve, such as external adapters. */
+export function adapterSupportsAiConnections(
+  adapterType: string,
+  runnerProvider?: unknown,
+  acpxAgent?: unknown,
+): boolean {
+  const harness = aiConnectionHarness(adapterType, runnerProvider, acpxAgent);
+  return Object.values(AI_CONNECTION_CAPABILITIES).some((capability) =>
+    Object.values(capability.methods).some((method) => method?.adapters.includes(harness)),
+  );
+}
 export function isAiConnectionCompatible(
   requirement: AiConnectionMetadata | AiConnectionBinding,
   adapterType: string,
@@ -115,18 +143,7 @@ export function isAiConnectionCompatible(
   runnerProvider?: unknown,
   acpxAgent?: unknown,
 ): boolean {
-  if (adapterType === "paperclip_runner")
-    adapterType =
-      runnerProvider === "claude" ||
-      (runnerProvider === "acpx" && acpxAgent === "claude")
-        ? "claude_local"
-        : runnerProvider === "acpx" && acpxAgent === "grok"
-          ? "grok_local"
-        : runnerProvider === "codex"
-          ? "codex_local"
-          : runnerProvider === "opencode"
-            ? "opencode_local"
-            : "unsupported";
+  adapterType = aiConnectionHarness(adapterType, runnerProvider, acpxAgent);
   const methods = AI_CONNECTION_CAPABILITIES[requirement.provider].methods;
   const candidates = "mode" in requirement && requirement.mode === "responsible_user"
     ? Object.values(methods)

@@ -15,7 +15,7 @@ import * as executionTarget from "@paperclipai/adapter-utils/execution-target";
 import { prepareManagedAiRuntime, assertManagedAiProjectAuth } from "../services/ai-connection-runtime.js";
 import { toolAccessService } from "../services/tool-access.js";
 import { secretService } from "../services/secrets.js";
-import { aiConnectionBindingSchema, connectionPurposeTransportSchema, isAiConnectionCompatible } from "@paperclipai/shared";
+import { adapterSupportsAiConnections, aiConnectionBindingSchema, connectionPurposeTransportSchema, isAiConnectionCompatible } from "@paperclipai/shared";
 import express from "express";
 import request from "supertest";
 import { aiConnectionRoutes, canInstallSharedAiConnectionForNewAgent, responsibleUserForAiRequest } from "../routes/ai-connections.js";
@@ -605,6 +605,12 @@ describe("managed AI connections", () => {
     expect(isAiConnectionCompatible(binding, "paperclip_runner", "same-model", "acpx", "claude")).toBe(true);
     expect(isAiConnectionCompatible(binding, "paperclip_runner", "same-model", "acpx", "codex")).toBe(false);
     expect(isAiConnectionCompatible({ provider: "openrouter", method: "api_key" }, "opencode_local", "anthropic/model")).toBe(false);
+    expect(adapterSupportsAiConnections("codex_local")).toBe(true);
+    expect(adapterSupportsAiConnections("paperclip_runner", "acpx", "claude")).toBe(true);
+    expect(adapterSupportsAiConnections("paperclip_runner", "acpx", "grok")).toBe(true);
+    expect(adapterSupportsAiConnections("paperclip_runner", "acpx", "codex")).toBe(false);
+    expect(adapterSupportsAiConnections("process")).toBe(false);
+    expect(adapterSupportsAiConnections("external_wrapper")).toBe(false);
   });
   it("does not let a forged delegation bypass human access or accept an expired subscription attempt", async () => {
     const selected = await service.select({ ...input, userId: "alice" });
@@ -898,6 +904,25 @@ describe("managed AI connections", () => {
       providerRequest.mockRestore(); probe.mockRestore(); runtime.mockRestore(); resolveTarget.mockRestore();
       await settings.update({ defaultEnvironmentId: previous.defaultEnvironmentId });
     }
+  });
+
+  it("releases the AI connection when an agent switches to a harness no connection can serve", async () => {
+    const { agentRoutes } = await import("../routes/agents.js");
+    const id = randomUUID();
+    await db.insert(agents).values({ id, companyId, name: "Switch to process", adapterType: "claude_local", adapterConfig: { model: "claude-sonnet-4-6" }, runtimeConfig: { heartbeat: { enabled: false }, aiConnection: binding } });
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => { req.actor = { type: "board", source: "local_implicit", userId: "alice", companyIds: [companyId] }; next(); });
+    app.use("/api", agentRoutes(db));
+    app.use((error: { status?: number; message: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => { res.status(error.status ?? 500).json({ error: error.message }); });
+    const switched = await request(app).patch(`/api/agents/${id}`).send({ adapterType: "process", adapterConfig: { command: "echo" } });
+    expect(switched.status, JSON.stringify(switched.body)).toBe(200);
+    expect(switched.body.runtimeConfig).toEqual({ heartbeat: { enabled: false } });
+    expect((await db.select().from(agents).where(eq(agents.id, id)))[0].runtimeConfig.aiConnection).toBeUndefined();
+    // A stale binding resent by a form opened before the switch is dropped as well.
+    const resent = await request(app).patch(`/api/agents/${id}`).send({ runtimeConfig: { heartbeat: { enabled: false }, aiConnection: binding } });
+    expect(resent.status, JSON.stringify(resent.body)).toBe(200);
+    expect(resent.body.runtimeConfig.aiConnection).toBeUndefined();
   });
 
   it("creates and hires agents with an authorized restricted shared connection", async () => {
