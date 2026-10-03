@@ -113,7 +113,10 @@ if (Test-Healthy) {
   exit 0
 }
 
-$env:Path = "$NodeDir;$env:Path"
+# Agent CLIs (Cursor `agent`, Claude, Codex) installed after Explorer started are only in the registry PATH.
+$registryPath = @([Environment]::GetEnvironmentVariable("Path", "Machine"), [Environment]::GetEnvironmentVariable("Path", "User")) -join ";"
+$cliDirs = @("$env:LOCALAPPDATA\cursor-agent", "$env:USERPROFILE\.local\bin", "$env:APPDATA\npm") | Where-Object { Test-Path $_ }
+$env:Path = (@($NodeDir) + $cliDirs + @($registryPath, $env:Path)) -join ";"
 $env:PORT = "$Port"
 $env:PAPERCLIP_NO_BROWSER = "1"
 $env:PAPERCLIP_OPEN_ON_LISTEN = "false"

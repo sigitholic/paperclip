@@ -402,6 +402,7 @@ Jadi kamu cukup `git pull` dari fork ini; tidak perlu menarik upstream sendiri.
 | Windows: `No such built-in module: node:sqlite` | Node terlalu lama. Install Node 24 (`winget install OpenJS.NodeJS.LTS`), buka terminal baru, cek `node -v`. |
 | Windows: `connect ECONNREFUSED 127.0.0.1:5441` | Docker Desktop atau container `paperclip-postgres` belum jalan. Jalankan `docker start paperclip-postgres`. |
 | Save/Test agent gagal: `Select an AI connection compatible with the new harness and model` | Agent masih terikat AI connection lama setelah ganti adapter (bug Paperclip, usulan upstream #12). Install ringan: dobel-klik **Starnet - Perbaiki Agent**. Install developer: hapus lewat SQL `update agents set runtime_config = runtime_config - 'aiConnection' where id = '<id agent>';`. |
+| Adapter Cursor: `Command not found in PATH: "agent"` | Cursor IDE tidak memasang CLI-nya. Pasang Cursor CLI di PowerShell biasa: `irm 'https://cursor.com/install?win32=true' \| iex`, lalu login (`agent login`) atau isi `CURSOR_API_KEY` di env agent. Tutup dan nyalakan lagi Starnet Office; launcher menambahkan `%LOCALAPPDATA%\cursor-agent` ke PATH server. |
 | Server masih jalan di background setelah terminal ditutup | Cari PID dengan `netstat -ano \| findstr :3100`, lalu `taskkill //PID <PID> //T //F` (Git Bash). |
 | Ingin instance terpisah untuk eksperimen | `PORT=3200 pnpm dev --data-dir ./tmp/pc-lab` (data di folder itu, tidak mengganggu instance utama). |
 | Telemetri | Matikan dengan `PAPERCLIP_TELEMETRY_DISABLED=1`. |
