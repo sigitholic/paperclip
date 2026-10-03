@@ -200,22 +200,32 @@ $settingsOut = [ordered]@{
 }
 [IO.File]::WriteAllText($SettingsFile, ($settingsOut | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
 
-$launcher = Join-Path $Root "start.ps1"
-$localLauncher = if ($PSScriptRoot) { Join-Path $PSScriptRoot "start.ps1" } else { $null }
-if ($localLauncher -and (Test-Path $localLauncher)) { Copy-Item -Force $localLauncher $launcher }
-else { Save-Download "$RawBase/start.ps1" $launcher }
+foreach ($file in @("start.ps1", "fix-agents.mjs")) {
+  $target = Join-Path $Root $file
+  $local = if ($PSScriptRoot) { Join-Path $PSScriptRoot $file } else { $null }
+  if ($local -and (Test-Path $local)) { Copy-Item -Force $local $target }
+  else { Save-Download "$RawBase/$file" $target }
+}
 $startCmd = Join-Path $Root "start.cmd"
 $cmdText = "@echo off`r`ntitle Starnet Office`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0start.ps1`" %*`r`necho.`r`npause`r`n"
 [IO.File]::WriteAllText($startCmd, $cmdText, (New-Object Text.ASCIIEncoding))
+$fixCmd = Join-Path $Root "fix-agents.cmd"
+$fixText = "@echo off`r`ntitle Starnet Office - Perbaiki Agent`r`n`"%~dp0node\node.exe`" `"%~dp0fix-agents.mjs`"`r`necho.`r`npause`r`n"
+[IO.File]::WriteAllText($fixCmd, $fixText, (New-Object Text.ASCIIEncoding))
 
-$shortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "Starnet Office.lnk"
+$desktop = [Environment]::GetFolderPath("Desktop")
 $shell = New-Object -ComObject WScript.Shell
-$link = $shell.CreateShortcut($shortcut)
-$link.TargetPath = $startCmd
-$link.WorkingDirectory = $Root
-$link.Description = "Nyalakan Starnet Office (Paperclip)"
-$link.Save()
-Write-Ok "Shortcut: $shortcut"
+foreach ($entry in @(
+    @{ Name = "Starnet Office"; Target = $startCmd; Description = "Nyalakan Starnet Office (Paperclip)" },
+    @{ Name = "Starnet - Perbaiki Agent"; Target = $fixCmd; Description = "Lepas ikatan AI connection agent sebelum ganti adapter" }
+  )) {
+  $link = $shell.CreateShortcut((Join-Path $desktop "$($entry.Name).lnk"))
+  $link.TargetPath = $entry.Target
+  $link.WorkingDirectory = $Root
+  $link.Description = $entry.Description
+  $link.Save()
+  Write-Ok "Shortcut: $($entry.Name)"
+}
 Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
 
 Write-Host ""

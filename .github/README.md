@@ -72,7 +72,7 @@ WSL. Semua masuk ke `%LOCALAPPDATA%\StarnetOffice`:
 3. Paket Starnet sudah jadi (6 plugin + adapter `starnet_9router`) dari GitHub Release
    [`starnet-bundle`](https://github.com/sigitholic/paperclip/releases/tag/starnet-bundle), dibuat otomatis oleh CI
    (`.github/workflows/starnet-release.yml`, `packages/starnet-devkit/scripts/release-bundle.mjs`).
-4. Shortcut **Starnet Office** di desktop.
+4. Shortcut **Starnet Office** dan **Starnet - Perbaiki Agent** di desktop.
 
 Dobel-klik **Starnet Office** untuk menyalakan. Start pertama menyiapkan database (sekitar 3-5 menit), lalu
 launcher memasang plugin dan adapter Starnet lewat API lokal dan membuka <http://127.0.0.1:3100>. Tutup jendelanya
@@ -87,6 +87,10 @@ Catatan:
   Desktop ada; kalau tidak, installer meminta UAC dinyalakan.
 - Folder lain: `$env:STARNET_HOME = "D:\StarnetOffice"` sebelum menjalankan baris di atas.
 - Belum termasuk di paket npm: patch core P-0 (stream bridge), jadi Virtual Office dan Office Chat memakai polling.
+- Agent tidak bisa disimpan atau dites setelah ganti adapter (misalnya ke `starnet_9router`) dengan pesan
+  *Select an AI connection compatible with ...*: nyalakan Starnet Office, dobel-klik **Starnet - Perbaiki Agent**,
+  lalu pilih agent yang mau dilepas AI connection-nya. Ini bug Paperclip (usulan upstream #12 di
+  [`STARNET_PATCHES.md`](../STARNET_PATCHES.md)).
 
 ### Install developer (build dari source)
 
@@ -397,6 +401,7 @@ Jadi kamu cukup `git pull` dari fork ini; tidak perlu menarik upstream sendiri.
 | Windows: `Execution of PostgreSQL by a user with administrative permissions is not permitted` | Postgres embedded tidak bisa jalan di akun admin. Pakai Postgres di Docker dan `onboard` dengan `DATABASE_URL` seperti di [langkah Windows](#windows-tanpa-wsl). |
 | Windows: `No such built-in module: node:sqlite` | Node terlalu lama. Install Node 24 (`winget install OpenJS.NodeJS.LTS`), buka terminal baru, cek `node -v`. |
 | Windows: `connect ECONNREFUSED 127.0.0.1:5441` | Docker Desktop atau container `paperclip-postgres` belum jalan. Jalankan `docker start paperclip-postgres`. |
+| Save/Test agent gagal: `Select an AI connection compatible with the new harness and model` | Agent masih terikat AI connection lama setelah ganti adapter (bug Paperclip, usulan upstream #12). Install ringan: dobel-klik **Starnet - Perbaiki Agent**. Install developer: hapus lewat SQL `update agents set runtime_config = runtime_config - 'aiConnection' where id = '<id agent>';`. |
 | Server masih jalan di background setelah terminal ditutup | Cari PID dengan `netstat -ano \| findstr :3100`, lalu `taskkill //PID <PID> //T //F` (Git Bash). |
 | Ingin instance terpisah untuk eksperimen | `PORT=3200 pnpm dev --data-dir ./tmp/pc-lab` (data di folder itu, tidak mengganggu instance utama). |
 | Telemetri | Matikan dengan `PAPERCLIP_TELEMETRY_DISABLED=1`. |
